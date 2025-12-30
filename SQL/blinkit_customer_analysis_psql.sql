@@ -567,3 +567,100 @@ select
 	
 from monthly_rev;
 
+-- ************************************************************************* --
+-- analysing monthly feedback ratio.
+
+with cte as (
+select
+	date_trunc('month', a.order_date) as order_month,
+	count(a.order_id) as total_order,
+	count(b.feedback_id) as total_feedback,
+	count(case when b.sentiment = 'Negative' then 1 end) as bad_review,
+	count(case when b.sentiment = 'Neutral' then 1 end) as neutral_review,
+	count(case when b.sentiment not in ('Neutral', 'Negative') then 1 end) as good_review
+from blinkit_orders as a
+join blinkit_customer_feedback as b on b.order_id = a.order_id
+group by 1)
+
+select
+	order_month,
+	
+	total_order,
+	round((total_order - lag(total_order) over (order by order_month)) * 100.0 / 
+	lag(total_order) over (order by order_month), 2) as order_cnt_growth,
+	
+	round(bad_review * 100.0 / total_feedback, 2) as bad_feedback_rate,
+	round(neutral_review * 100.0 / total_feedback, 2) as neutral_feedback_rate,
+	round(good_review * 100.0 / total_feedback, 2) as good_feedback_rate
+
+from cte order by 1;
+
+-- analysing customers who actually left ordering after a bad review.
+
+With feedback_cte as 
+(select
+	date_trunc('month', a.order_date) as order_month,
+	a.customer_id,
+	-- getting customer's last order and its review.
+	a.order_date,
+	-- indicator, if lead becomes null, then there was no order on the next date.
+	lead(a.order_date) over (partition by a.customer_id order by a.order_date) as next_order_date,
+	b.rating,
+	b.sentiment
+from blinkit_orders as a
+join blinkit_customer_feedback as b on b.order_id = a.order_id
+)
+
+
+select
+	order_month,
+	count(distinct customer_id) as total_customer_cnt,
+	count(case when next_order_date is NULL and sentiment = 'Negative' then 1 end) as customer_churn_cnt,
+	round(count(case when next_order_date is NULL and sentiment = 'Negative' then 1 end) * 100.0 / 
+	count(distinct customer_id), 2) as churn_pct
+from feedback_cte
+group by 1
+order by 1;
+
+-- analysing the possible reason for customer's bad review?
+-- considering multiple factor, as - 
+	-- 1. average delivery gap per order for the same customer.
+	-- 2. order_value of that particular order.
+	-- 3. rating given of that particular order.
+	-- 4. sentiment and feedback text of the order.
+	-- 5. if the customer has churned after that order or not (considering negative feedback and smaller order count)
+
+-- I am using windows functions such as lag() or lead() to get customer previous order quantity, order_total, rating, sentiment.
+
+with cte as
+(select
+	a.customer_id,
+	a.order_id,
+	a.order_total,
+	a.delivery_gap_in_minutes,
+	a.gap_between_promised_actual_time,
+	b.feedback_category,
+	b.sentiment,
+	b.rating
+from blinkit_orders as a
+join blinkit_customer_feedback as b on b.order_id = a.order_id
+)
+
+select
+	customer_id,
+	feedback_category,
+	
+	avg(case when sentiment = 'Negative' then order_total end) as aov_negative_feedback,
+	avg(case when sentiment = 'Negative' then delivery_gap_in_minutes end) as delivery_gap_negative_feedback,
+	avg(case when sentiment = 'Negative' then gap_between_promised_actual_time end) as gap_btwn_promised_actual_negative_feedback,
+
+	avg(case when sentiment = 'Neutral' then order_total end) as aov_neutral_feedback,
+	avg(case when sentiment = 'Neutral' then delivery_gap_in_minutes end) as delivery_gap_Neutral_feedback,
+	avg(case when sentiment = 'Neutral' then gap_between_promised_actual_time end) as gap_btwn_promised_actual_Neutral_feedback,
+
+	avg(case when sentiment = 'Positive' then order_total end) as aov_Positive_feedback,
+	avg(case when sentiment = 'Positive' then delivery_gap_in_minutes end) as delivery_gap_Positive_feedback,
+	avg(case when sentiment = 'Positive' then gap_between_promised_actual_time end) as gap_btwn_promised_actual_Positive_feedback
+
+from cte
+group by 1,2;
