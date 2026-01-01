@@ -649,18 +649,103 @@ join blinkit_customer_feedback as b on b.order_id = a.order_id
 select
 	customer_id,
 	feedback_category,
-	
+
+	count(order_id) as total_order_cnt,
 	avg(case when sentiment = 'Negative' then order_total end) as aov_negative_feedback,
 	avg(case when sentiment = 'Negative' then delivery_gap_in_minutes end) as delivery_gap_negative_feedback,
-	avg(case when sentiment = 'Negative' then gap_between_promised_actual_time end) as gap_btwn_promised_actual_negative_feedback,
-
+	
 	avg(case when sentiment = 'Neutral' then order_total end) as aov_neutral_feedback,
 	avg(case when sentiment = 'Neutral' then delivery_gap_in_minutes end) as delivery_gap_Neutral_feedback,
-	avg(case when sentiment = 'Neutral' then gap_between_promised_actual_time end) as gap_btwn_promised_actual_Neutral_feedback,
-
+	
 	avg(case when sentiment = 'Positive' then order_total end) as aov_Positive_feedback,
-	avg(case when sentiment = 'Positive' then delivery_gap_in_minutes end) as delivery_gap_Positive_feedback,
-	avg(case when sentiment = 'Positive' then gap_between_promised_actual_time end) as gap_btwn_promised_actual_Positive_feedback
+	avg(case when sentiment = 'Positive' then delivery_gap_in_minutes end) as delivery_gap_Positive_feedback
 
 from cte
 group by 1,2;
+
+
+-- area wise delivery performance?
+select
+	b.area,
+	-- area wise stats.
+	count(distinct b.customer_id) as customer_count_per_area, 
+	count(*) as order_cnt,
+	round(avg(a.order_total)::decimal, 2) as AOV,
+
+	-- delivery wise experience for each customer.
+	c.feedback_category,
+	round(avg(c.rating), 2) as avg_rating_per_category,
+
+	-- delivery delay.
+	round(avg(delivery_gap_in_minutes)::decimal, 2) as avg_delivery_delay,
+	round(avg(gap_between_promised_actual_time)::decimal, 2) as avg_promised_delivery_delay
+
+from blinkit_orders as a
+join blinkit_customer_details as b on b.customer_id = a.customer_id
+join blinkit_customer_feedback as c on c.order_id = a.order_id
+group by b.area, c.feedback_category;
+
+-- deep analysing : percentage of bad feedbacks that each month got ?
+with cte as
+(select
+	date_trunc('month', a.order_date) as order_month,
+	c.feedback_category,
+	round(avg(c.rating), 2) as avg_rating,
+	count(*) as total_fdbk_received,
+	count(case when c.sentiment in ('Negative') then 1 end) as neg_fdbk_cnt,
+	round(count(case when c.sentiment in ('Negative') then 1 end) * 100.0 / count(*), 2) neg_and_neutral_fdck_pct
+from blinkit_orders as a
+join blinkit_customer_details as b on b.customer_id = a.customer_id
+join blinkit_customer_feedback as c on c.order_id = a.order_id
+group by 1,2
+),
+
+-- analysing which category got the highest number of negative feedbacks in monthly basis.
+cte2 as 
+(select
+	order_month,
+	feedback_category,
+	avg_rating,
+	total_fdbk_received,
+	neg_fdbk_cnt,
+	dense_rank() over (partition by order_month order by neg_fdbk_cnt desc) as neg_fdbk_rnk
+from cte
+)
+
+select
+	*
+from cte2
+where neg_fdbk_rnk <= 1
+order by 1;
+
+-- analysing which area has the most negative review on which feedback category basis?
+
+select
+	b.area,
+	c.feedback_category,
+	c.sentiment,
+	count(*) as feedbk_size
+from blinkit_orders as a
+join blinkit_customer_details as b on b.customer_id = a.customer_id
+join blinkit_customer_feedback as c on c.order_id = a.order_id
+where c.sentiment = 'Negative'
+group by 1, 2, 3
+order by 1, 4 desc;
+
+-- analysing blinkit's revenue, rating and delivery performance by quarterly.
+select
+	date_trunc('year', a.order_date) as year,
+	extract(quarter from a.order_date) as quarter,
+
+	-- business stats.
+	count(a.order_id) as order_cnt,
+	round(avg(a.order_total)::decimal, 2) as aov,
+	round(avg(b.rating)::decimal, 2) as avg_rating,
+
+	-- delivery performance.
+	round(avg(extract(epoch from (a.actual_delivery_time::timestamp - a.order_date::timestamp)) / 60), 2) as avg_delivery_delay,
+	round(avg(extract(epoch from (a.promised_delivery_time::timestamp - a.actual_delivery_time::timestamp)) / 60), 2) avg_promised_delivery_delay
+from blinkit_orders as a
+join blinkit_customer_feedback as b on b.customer_id = a.customer_id
+group by 1, 2
+order by 1, 2;
