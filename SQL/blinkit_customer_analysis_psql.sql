@@ -210,12 +210,7 @@ where ord_dupl_check > 1; -- no duplicates found!
 
 
 -- ******* Data analysis using SQL ******* --
--- In this phase, We will find out the following - 
--- 1. RFM (recency , frequency and monetary of each customer)
-	-- subset task: RFM by area wise.
-	
-
--- Basically we will be doing business level analysis.
+-- In this phase, We will find out the following -
 
 -- 1. RFM analysis (recency, frequency and monetary analysis of each customer).
 -- 2. Cohort user growth.
@@ -255,17 +250,15 @@ user_bin as (select
 from rfm)
 
 -- distributing customers.
--- champions (5,5,5 or 5,4,3) , loyal customers (4, 4, 3 or 4,3,3), potential_loyalist (4,3,3 or 3,3,2) ,
--- at risk (3,2,2 or 2,2,2) and churned (1,1,1 or 1, 1, 2)
  
 select
 	CASE
-            when recency_score >= 4 and frequency_score >= 4 and monetary_score >= 3 then 'Champions'
-			when recency_score >= 4 and frequency_score >= 3 and monetary_score >= 3 then 'Loyal customer'
-			when recency_score >= 3 and frequency_score >= 3 and monetary_score >= 2 then 'Potential loyalist'
-			when recency_score >= 2 and frequency_score >= 2 and monetary_score >= 2 then 'At risk'
-			when recency_score >= 1 and frequency_score >= 1 and monetary_score >= 1 then 'Churned'
-        	ELSE 'Others'
+         when recency_score >= 4 and frequency_score >= 1 and monetary_score >= 1 then 'Champions'
+		 when recency_score >= 4 and frequency_score >= 2 and monetary_score >= 2 then 'Loyal customer'
+		 when recency_score >= 3 and frequency_score >= 3 and monetary_score >= 3 then 'Potential loyalist'
+		 when recency_score >= 2 and frequency_score >= 1 and monetary_score >= 2 then 'At risk'
+		 when recency_score >= 1 and frequency_score >= 1 and monetary_score >= 1 then 'Churned'
+         ELSE 'Others'
     END AS rfm_segment,
 	
 	count(customer_id) as customer_count,
@@ -274,7 +267,7 @@ select
 	round(avg(frequency), 2) as avg_buying_frequency,
 	round(avg(monetary), 2) as avg_money_spend,
 
-	round(count(customer_id) * 100.0 / (select count(distinct customer_id) from blinkit_customer_details), 2) as contribution_pct
+	round(count(customer_id) * 100.0 / (select count(distinct customer_id) from blinkit_customer_details), 2) as cust_contribution_pct
 from user_bin
 group by rfm_segment;
 
@@ -317,7 +310,11 @@ select
 	case
 		when prev_active_customer_count is null or prev_active_customer_count = 0 then 0
 		else round(((active_customers - prev_active_customer_count) * 100.0 / prev_active_customer_count), 2)
-	end as monthly_change_pct
+	end as monthly_change_pct,
+
+	case
+		when prev_active_customer_count < active_customers then 'retention improved'
+	end as retention_improve_cycle
 	
 from prev_month_cust_cnt;
 
@@ -367,8 +364,36 @@ select
 	cohort_month,
 	month_number,
 	active_customer_count,
+	cohort_size_locked,
 	round((active_customer_count * 100.0 / cohort_size_locked), 2) as user_retention_rate
 from first_month_value;
+
+-- MAU analysis.
+with cte as
+(select
+	date_trunc('month', a.order_date) as order_month,
+	count(a.order_id) as order_cnt,
+
+	-- stats.
+	round(avg(a.order_total)::decimal, 2) as aov,
+	count(case when b.sentiment = 'Positive' then 1 end) as positive_fdbk_cnt,
+	count(b.feedback_id) filter (where b.sentiment != 'Positive') as neutral_and_neg_fdbk_cnt
+	
+from blinkit_orders as a
+join blinkit_customer_feedback as b on b.order_id = a.order_id
+group by 1
+)
+
+select
+	order_month,
+	order_cnt,
+	lag(order_cnt) over (order by order_month) prev_order_cnt,
+	round((order_cnt - lag(order_cnt) over (order by order_month)) * 100.0 / lag(order_cnt) over (order by order_month), 2) as mom_order_cnt_growth,
+	
+	aov,
+	lag(aov) over (order by order_month) prev_aov_cnt,
+	round((aov - lag(aov) over (order by order_month)) * 100.0 / lag(aov) over (order by order_month), 2) as mom_avg_aov_growth
+from cte;
 
 
 -- 3. Delivery time analysis per hour in a day.
@@ -733,8 +758,9 @@ group by 1, 2, 3
 order by 1, 4 desc;
 
 -- analysing blinkit's revenue, rating and delivery performance by quarterly.
-select
-	date_trunc('year', a.order_date) as year,
+with cte as 
+(select
+	date_trunc('month', a.order_date) as order_month,
 	extract(quarter from a.order_date) as quarter,
 
 	-- business stats.
@@ -748,4 +774,13 @@ select
 from blinkit_orders as a
 join blinkit_customer_feedback as b on b.customer_id = a.customer_id
 group by 1, 2
-order by 1, 2;
+)
+
+select
+	*,
+
+	lag(order_cnt) over (order by order_month) as prev_ord_cnt,
+	lag(aov) over (order by order_month) as prev_aov,
+	lag(avg_delivery_delay) over (order by order_month) as prev_avg_delivery_delay,
+	lag(avg_promised_delivery_delay) over (order by order_month) as prev_avg_promised_delivery_delay
+from cte;
