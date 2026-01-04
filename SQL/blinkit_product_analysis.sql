@@ -83,7 +83,6 @@ where product_rnk > 1; -- no double entries.
 --we are seeing which products is the immediate next product ordered by the same customer,
 -- to analyze hooked products and possibly most revenue generating product.
 
-
 with cte as 
 (select
 	a.customer_id,
@@ -92,12 +91,14 @@ with cte as
 	-- getting product category & name.
 	c.category,
 	c.product_name as curr_prod_txn,
-
+	
 	-- getting products total order value.
-	a.order_total,
+	a.order_total as curr_order_total,
 
 	-- getting user's next immediate product.
-	lead(c.product_name) over (partition by a.customer_id order by a.order_date) as nxt_prod_txn
+	lead(c.product_name) over (partition by a.customer_id order by a.order_date) as nxt_prod_txn,
+	lead(a.order_total) over (partition by a.customer_id order by a.order_date) as nxt_order_total
+	
 from blinkit_orders as a
 join blinkit_order_items as b on b.order_id = a.order_id
 join blinkit_products as c on c.product_id = b.product_id
@@ -107,7 +108,7 @@ select
 	curr_prod_txn,
 	nxt_prod_txn,
 	count(*) as txn_cnt,
-	round(avg(order_total)::decimal, 2) as aov_per_pair
+	round(sum(curr_order_total + nxt_order_total)::decimal, 2) as total_order_value
 from cte
 where nxt_prod_txn is not null
 group by 1,2
@@ -140,6 +141,53 @@ select
 from cte
 where next_category is not null and next_order_total is not null
 group by 1, 2
-order by 1,2,4 desc;
+order by 4 desc;
 
-select * from cte;
+-- analysing customer's choice of product inside blinkit. In this analysis, we will analyze if any customer has bought the same 
+-- product for constant 3 times to see if any customer has a solid product preference or not.
+-- this is a strict analysis, where we are using windows functions to get the immediate product they have ordered.
+
+with cte as
+(select
+	a.order_id,
+	c.customer_id,
+
+	d.product_id,
+	d.product_name as fst_purchase,
+	
+	lead(d.product_name, 1) over (partition by c.customer_id order by a.order_date) as snd_purchase,
+	
+	lead(d.product_name, 2) over (partition by c.customer_id order by a.order_date) as trd_purchase
+	
+from blinkit_orders as a
+join blinkit_order_items as b on b.order_id = a.order_id
+join blinkit_customer_details as c on c.customer_id = a.customer_id
+join blinkit_products as d on d.product_id = b.product_id
+)
+
+select
+	customer_id,
+	fst_purchase,
+	snd_purchase,
+	trd_purchase
+from cte
+where fst_purchase = snd_purchase and trd_purchase = snd_purchase; -- there's no result.
+
+-- now we are analysing customer's who bought a product more than one time.
+select
+	b.customer_id,
+	b.customer_name,
+
+	c.product_id,
+	d.product_name,
+	count(*) as size_count
+from blinkit_orders as a
+join blinkit_customer_details as b on b.customer_id = a.customer_id
+join blinkit_order_items as c on c.order_id = a.order_id
+join blinkit_products as d on d.product_id = c.product_id
+group by 1,2,3,4
+having count(*) > 1; -- filtering out one time buyers. 
+-- as there's very low quantity of order sizes per product and customer, I think it is best suited to not to elongate that analysis.
+
+-- analysing time gap between two purchased products (the products should be same).
+-- because from our previous analysis we've found a small percentage of customers who have ordered one product more than once.
