@@ -187,7 +187,105 @@ join blinkit_order_items as c on c.order_id = a.order_id
 join blinkit_products as d on d.product_id = c.product_id
 group by 1,2,3,4
 having count(*) > 1; -- filtering out one time buyers. 
+
 -- as there's very low quantity of order sizes per product and customer, I think it is best suited to not to elongate that analysis.
 
 -- analysing time gap between two purchased products (the products should be same).
 -- because from our previous analysis we've found a small percentage of customers who have ordered one product more than once.
+-- trying to use self join on same order_id, customer_id and product_id to get order date.
+
+with cte as
+(select
+	a.customer_id,
+	d.product_id,
+	a.order_date,
+	d.product_name
+	
+from blinkit_orders as a
+join blinkit_customer_details as b on b.customer_id = a.customer_id
+join blinkit_order_items as c on c.order_id = a.order_id
+join blinkit_products as d on d.product_id = c.product_id
+)
+
+select
+	a.customer_id,
+	a.product_id,
+	a.product_name,
+	a.order_date as first_buying_date,
+	b.order_date as next_buying_date,
+	b.order_date::date - a.order_date::date as order_day_gap
+from cte as a
+join cte as b on b.customer_id = a.customer_id and b.product_id = a.product_id
+	where a.order_date < b.order_date;
+
+-- CLV analysis (customer life value analysis)
+select
+	b.customer_id,
+	b.customer_name,
+
+	-- statistical numbers.
+	count(a.order_id) as order_cnt,
+	round(sum(a.order_total)::decimal, 2) as total_value_spent,
+	round(avg(a.order_total)::decimal, 2) as aov,
+
+	-- delivery timings.
+	round(avg(a.delivery_gap_in_minutes)::decimal, 2) as avg_delivery_delay,
+	round(avg(a.gap_between_promised_actual_time)::decimal, 2) as avg_promised_actual_time,
+
+	-- extra additional analysis.
+	-- counting pct of their good feedback among all orders.
+	round(count(case when c.sentiment != 'Negative' then 1 end) * 100.0 / count(a.order_id), 2) as good_review_pct,
+	round(count(case when c.sentiment = 'Negative' and c.feedback_category = 'Delivery' then 1 end) * 100.0 / count(a.order_id), 2) as delivery_wise_bad_category_pct
+
+	
+from blinkit_orders as a
+join blinkit_customer_details as b on b.customer_id = a.customer_id
+join blinkit_customer_feedback as c on c.customer_id = b.customer_id
+group by 1, 2;
+
+-- analysing product sentiment wise review. 
+-- this analysis will help to identify products which generates more average order value but get's bad feedback regarding 
+-- 'product quality', this will help the business to improve product wise quality improvement and better product management.
+-- for this analysis, I am using DENSE_RANK() function to gives ranks to products which got the most fdbk regarding sentiment.
+-- this will farther help us to identify that to categorize product by sentiment count.
+
+with cte1 as
+(select
+	b.product_name,
+
+	c.sentiment,
+
+	round(avg(d.order_total)::decimal, 2) as avg_order_value,
+	count(*) as fdbk_size,
+	round(avg(c.rating), 2) as avg_rating,
+
+	dense_rank() over (partition by b.product_name order by count(*) desc) as most_fdbk_received_rnk
+from blinkit_order_items as a
+join blinkit_products as b on b.product_id = a.product_id
+join blinkit_customer_feedback as c on c.order_id = a.order_id
+join blinkit_orders as d on d.order_id = a.order_id
+where c.feedback_category = 'Product Quality' -- filtering which product got how much feedback by sentiment.
+group by 1,2
+),
+
+cte2 as 
+(select
+	*,
+	max(avg_order_value) over (partition by product_name) as max_revenue_per_product
+from cte1
+order by product_name
+)
+
+-- filtering aov with the max aov to actually get to know the product aov by sentiment wise, avg rnk and also sentiment rank.
+select
+	product_name,
+	sentiment,
+	avg_order_value,
+	fdbk_size as fdbk_received,
+	avg_rating,
+	most_fdbk_received_rnk
+from cte2
+where avg_order_value = max_revenue_per_product; -- main filter to filter out products which is making below and above avg order value.
+
+-- product wise MoM growth of order counts.
+
