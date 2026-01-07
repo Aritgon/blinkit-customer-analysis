@@ -289,3 +289,24 @@ where avg_order_value = max_revenue_per_product; -- main filter to filter out pr
 
 -- product wise MoM growth of order counts.
 
+-- seeing which product got ordered by any customer to see how many of repeating products where bought
+
+with cte as
+(select
+	b.product_id,
+	b.product_name,
+	c.order_date,
+	lead(c.order_date) over (partition by b.product_id order by c.order_date) as next_order_date,
+	extract(day from (lead(c.order_date) over (partition by b.product_id order by c.order_date)::timestamp - c.order_date::timestamp)) as gap_in_days
+from blinkit_order_items as a
+join blinkit_products as b on b.product_id = a.product_id
+join blinkit_orders as c on c.order_id = a.order_id
+)
+
+select
+	product_id,
+	product_name,
+	floor(avg(gap_in_days)) as avg_day_gap
+from cte
+group by product_id, product_name
+order by 3;
