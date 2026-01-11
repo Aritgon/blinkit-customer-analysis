@@ -310,3 +310,5 @@ select
 from cte
 group by product_id, product_name
 order by 3;
+
+-- products which ranked higher in each state in India? How much each product contributed to any state's total? How many of these products ranked higher in how many states?
