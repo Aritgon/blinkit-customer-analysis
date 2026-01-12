@@ -206,6 +206,14 @@ join blinkit_customer_details as b on b.customer_id = a.customer_id) as s
 where ord_dupl_check > 1; -- no duplicates found!
 
 
+-- altering values to full lowercase in blinkit_customer_feedback table.
+update blinkit_customer_feedback
+set feedback_category = lower(feedback_category);
+
+update blinkit_customer_feedback
+set sentiment = lower(sentiment);
+
+
 -- ******* Data injection and data validation phase ends here ******* --
 
 
@@ -788,39 +796,38 @@ from cte;
 
 -- more day wise analysis, In this part we will do when blinkit faced more delivery delays by order hour,
 -- order week and order month.
--- first we will be doing, which order hours faced more delivery delays 
+-- first we will be doing, which order hour faced more delivery delays 
 -- and how many customer has rated bad reviews regarding delivery delays?
 
-with cte as 
+with cte as
 (select
 	extract(hour from a.order_date) as order_hour,
 
-	-- avg delay per hour and avg gap between promised delivery and actual delivery timing.
-	round(avg(extract(epoch from (a.actual_delivery_time::timestamp - a.order_date::timestamp)) / 60), 2) as avg_delay,
-	round(avg(extract(epoch from (a.promised_delivery_time::timestamp - a.actual_delivery_time::timestamp)) / 60), 2) as avg_promised_delivery_delay,
+	round(avg(a.order_total)::decimal, 2) as avg_order_total,
 	
-	-- count of orders that received their orders later than the promised_delivery_time.
-	count(*) as total_order_count,
-	count(case when a.promised_delivery_time < a.actual_delivery_time then 1 end) as late_delivery_count,
-	round(count(case when a.promised_delivery_time < a.actual_delivery_time then 1 end) * 100.0 / count(*), 2) as pct_of_late_delivery
+	-- counting orders.
+	count(a.order_id) as order_cnt,
 
-	-- counting bad reviews from customers for each order hour.
-	count(case when c.feedback_category = 'Delivery')
-	
-	
+	-- counting counts of orders that faced late deliveries.
+	count(case when a.promised_delivery_time < a.actual_delivery_time then 1 end) as late_delivery_cnt,
 
+	-- counting hours that got bad feedbacks regarding late delivery experience.
+	count(case when c.feedback_category = 'delivery' and c.sentiment = 'negative' then 1 end) as bad_delivery_related_fdbk_cnt,
+
+	round(count(case when c.feedback_category = 'delivery' and c.sentiment = 'negative' then 1 end) * 100.0 / count(case when a.promised_delivery_time < a.actual_delivery_time then 1 end), 2) as bad_delivery_related_fdbk_pct
 	
 from blinkit_orders as a
 join blinkit_customer_details as b on b.customer_id = a.customer_id
 join blinkit_customer_feedback as c on c.order_id = a.order_id
 group by 1
-order by 1) -- ordering by the hour from the first to last.
-
+order by 1
+)
 
 select
-	distinct feedback_category
-from blinkit_customer_feedback;
-
+	*,
+	dense_rank() over (order by order_cnt desc) order_cnt_rnk,
+	dense_rank() over (order by bad_delivery_related_fdbk_pct desc) as bad_delivery_fdbk_pct_rnk
+from cte;
 
 -- pct of customer who experienced faster delivery after having a delayed delivery timing.
 -- We might try more monthly basis.
