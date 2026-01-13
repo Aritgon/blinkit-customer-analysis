@@ -832,3 +832,28 @@ from cte;
 -- pct of customer who experienced faster delivery after having a delayed delivery timing.
 -- We might try more monthly basis.
 
+with cte as
+(select
+	order_id,
+	customer_id,
+	gap_between_promised_actual_time,
+	
+	-- check for the next order delivery timing.
+	-- Find customers who had a bad delivery timing (actual_delivery_time > promised_delivery_time) and for next order,
+	-- he got a (actual_delivery_time < promised_delivery_time) good delivery timings.
+
+	-- "gap_between_promised_actual_time" column in positive value means the delivery delivered before on time.
+	
+	lead(gap_between_promised_actual_time) over (partition by customer_id order by order_date) as next_order_timing
+	
+from blinkit_orders
+)
+
+select
+	round(count(*) * 100.0 / (select count(*) from blinkit_orders), 2) as next_order_good_delivery_pct,
+	round(count(case when next_order_timing >= 0 then 1 end) * 100.0 / (select count(*) from blinkit_orders), 2) as nxt_delivery_ordered_before_promised_timing_pct
+from cte
+where next_order_timing > gap_between_promised_actual_time; -- filtering out null and also which delivery timing that was poor than the previous delivery timing.
+-- out of all orders, only ~26% orders faced a delivery timing improved, while ~16% of orders got their delivery before their promised timing.
+
+

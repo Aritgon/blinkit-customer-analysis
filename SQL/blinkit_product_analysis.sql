@@ -311,4 +311,159 @@ from cte
 group by product_id, product_name
 order by 3;
 
--- products which ranked higher in each state in India? How much each product contributed to any state's total? How many of these products ranked higher in how many states?
+-- products which ranked higher in each area in India? 
+-- How much each product contributed to any state's total? 
+-- advanced analysis : which product ranked 1st more than one time in India among many area?
+
+select
+	d.area,
+	c.product_id,
+	c.product_name,
+
+	-- numerical stats.
+	count(*) as order_size,
+	round(avg(a.order_total)::decimal, 2) as aov,
+
+	-- using dense_rank() to rank aov inside each area for each product.
+	dense_rank() over (partition by d.area order by avg(a.order_total) desc) as aov_rnk
+from blinkit_orders as a
+join blinkit_order_items as b on b.order_id = a.order_id
+join blinkit_products as c on c.product_id = b.product_id 
+join blinkit_customer_details as d on d.customer_id = a.customer_id
+group by 1,2,3
+having count(*) > 1;
+
+-- seems a lot of product was only ordered one time in our 5000 row data. Unfortunately, this data isn't answering our motive.
+-- we are using having clause to apply a filter to set the ranking among products that were ordered more than one time.
+-- we are dropping this analysis as this set of data isn't valid to our analysis.
+
+-- analysing which product contributed the most in our total revenue?
+
+select
+	c.product_name,
+	round(sum(a.order_total)::decimal, 2) as total_order_value,
+
+	-- using scaler sub_query to get total order value.
+	-- (select round(sum(order_total)::decimal, 2) from blinkit_orders) as tov_static,
+
+	round(sum(a.order_total)::decimal * 100.0 / (select sum(order_total) from blinkit_orders)::decimal, 2) as contribution_pct
+from blinkit_orders as a
+join blinkit_order_items as b on b.order_id = a.order_id
+join blinkit_products as c on c.product_id = b.product_id
+group by 1
+order by 2 desc;
+
+-- "pet treats contributed the most with ~5% of order value, followed by toilet cleaners with ~4% and
+-- lotion with ~4% of their order total".
+
+-- doing same analysis on monthly basis to find if any product falls into any special or dedicated purchasing habit among customers
+
+with cte1 as
+(select
+	extract(month from a.order_date) as order_month,
+	-- getting product details.
+	c.product_name,
+
+	-- numerical stats.
+	count(a.order_id) as order_size,
+	round(sum(a.order_total)::decimal, 2) as total_order_value,
+
+	-- ranking product total_order_value per month.
+	dense_rank() over (partition by extract(month from a.order_date) order by sum(a.order_total) desc) as order_value_rnk
+from blinkit_orders as a
+join blinkit_order_items as b on a.order_id = b.order_id
+join blinkit_products as c on c.product_id = b.product_id
+group by 1, 2
+),
+-- doing monthly contribution percentage.
+cte2 as (select
+	order_month,
+	product_name,
+	order_size,
+	total_order_value,
+	order_value_rnk,
+
+	-- each month's order_size and total order value. 
+	-- sum(order_size) over (partition by order_month) as total_order_per_month,
+	-- sum(total_order_value) over (partition by order_month) as total_order_value_per_month,
+
+	round((order_size * 100.0 /sum(order_size) over (partition by order_month)), 2) as order_size_contribution_to_monthly_total_order_size,
+	round((total_order_value * 100.0 /sum(total_order_value) over (partition by order_month)), 2) as order_value_contribution_to_monthly_total_order_value
+from cte1)
+
+-- filter to get top five products each month by it's total order value and it's contribution to that month's total order value.
+select
+	*
+from cte2
+where order_value_rnk <= 5;
+
+-- counting products that came in 1st rank every month.
+-- select
+-- 	product_name,
+-- 	count(*) as repetition_size
+-- from cte2
+-- where order_value_rnk <= 1
+-- group by 1
+-- order by 2 desc;
+
+-- from this analysis, we acknoledged that "pet treats" has appeared 5 time in all month, followed by "lotion" (2 times) 
+-- contributing mostly to monthly revenue contribution.
+
+-- doing category total revenue contribution analysis per month
+with cte1 as
+(select
+	extract(month from a.order_date) as order_month,
+	-- getting product details.
+	c.category,
+
+	-- numerical stats.
+	count(a.order_id) as order_size,
+	round(sum(a.order_total)::decimal, 2) as total_order_value,
+
+	-- ranking product total_order_value per month.
+	dense_rank() over (partition by extract(month from a.order_date) order by sum(a.order_total) desc) as order_value_rnk
+from blinkit_orders as a
+join blinkit_order_items as b on a.order_id = b.order_id
+join blinkit_products as c on c.product_id = b.product_id
+group by 1, 2
+),
+
+cte2 as (select
+	order_month,
+	category,
+	order_size,
+	total_order_value,
+	order_value_rnk,
+
+	-- each month's order_size and total order value. 
+	-- sum(order_size) over (partition by order_month) as total_order_per_month,
+	-- sum(total_order_value) over (partition by order_month) as total_order_value_per_month,
+
+	round((order_size * 100.0 /sum(order_size) over (partition by order_month)), 2) as order_size_contribution_to_monthly_total_order_size,
+	round((total_order_value * 100.0 /sum(total_order_value) over (partition by order_month)), 2) as order_value_contribution_to_monthly_total_order_value
+from cte1)
+
+-- filtering top 3 categories each month.
+-- select
+-- 	*
+-- from cte2
+-- where order_value_rnk <= 3;
+
+select
+	category,
+	count(*) as repetition_size
+from cte2
+where order_value_rnk <= 3
+group by category
+order by 2 desc;
+
+-- in this categorical monthly revenue contribution analysis,
+-- "dairy & breakfast" came in first position appearning 9 times
+-- (in short, it has ranked 1st in 9 months regarding total order value contribution), followed by "pet care"
+-- appearing 6 times through our analysis.
+
+/* doing product analysis, which has a lower avg day gap during it's orders among customers.
+	1. this will help us know which product was in hot needs for every customer.
+	2. products which has bigger day gap. This might indicates that this products have lesser need, or needs better algorithm tweaks or may risk stock outdate
+*/
+
