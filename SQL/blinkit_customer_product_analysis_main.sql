@@ -159,24 +159,35 @@ score_cte as
 from cust_details_cte
 )
 
--- In the next CTE we are going to create bins or categories with the merged scores to get more compact result from the score cte.
--- rfm_cte as (
--- select
--- 	-- merging all the scores first.
--- 	(r_score * 100 + f_score * 10 + m_score) as rfm_bins,
+/*
+	In the next CTE we are going to create bins or categories 
+	with the merged scores to get more compact result from the score cte.		
+*/
 
--- 	-- counting customers.
--- 	count(distinct customer_id) as cust_cnt,
+select
+	-- merging all the scores first.
 
--- 	-- stats per group.
--- 	round(avg(recency)::decimal, 2) as avg_recency,
--- 	round(avg(frequency)::decimal, 2) as avg_frequency,
--- 	round(avg(monetary)::decimal, 2) as avg_monetary
--- from score_cte
--- group by 1)
+	r_score,
+	f_score,
+	m_score,
+	
+	(r_score * 100 + f_score * 10 + m_score) as rfm_bins,
+	-- counting customers.
 
--- the above cte gives us a more granular POV on the RFM analysis.
-/*	However, we are creating categories of customers that will help us identify the customers that is helping blinkit
-making more revenues and also the group of customers that needs attention */
+	-- stats per group.
+	round(avg(recency)::decimal, 2) as avg_recency,
+	round(avg(frequency)::decimal, 2) as avg_frequency,
+	round(avg(monetary)::decimal, 2) as avg_monetary,
+	count(distinct customer_id) as cust_cnt,
+	(select count(distinct customer_id) from blinkit_orders) as total_cust_cnt,
+	
+	-- using whole customer_base to get pct of customers from each segments.
+	round(count(distinct customer_id) * 100.0 / (select count(distinct customer_id) from blinkit_orders), 2) as cust_size_pct
+from score_cte
+group by r_score, f_score, m_score, rfm_bins
+order by avg(monetary) desc;
 
--- have to setup the perfect customer segments.
+/*
+	Through this RFM analysis, we acknowledged that 
+
+*/
