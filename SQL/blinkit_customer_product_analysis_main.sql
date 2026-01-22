@@ -325,7 +325,7 @@ left join blinkit_orders as b on b.order_id = a.order_id)
 	
 	Joining on the order_id for both the tables because only some customers leave a feedback after their order.
 	For example, there might be 10 orders for a customer where they only submitted a feedback for only one order.
-	THe count() on the next query will every row for every order. Now to count order numbers , this is okay.
+	THe count() on the next query will count every row for every order. Now to count order numbers , this is okay.
 	but when we need to use count with case function this will wrongly output the result because every row will be counted
 	based on the case function condition.
 */
@@ -354,18 +354,18 @@ select
 	-- getting negative sentiments feedback count and pct from all feedbacks recorded for each delivery type.
 	count(case when sentiment = 'negative' then 1 end) as negative_fdbk_cnt,
 
-	count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) as negative_fdbk_regarding_delivery_cnt,
+	count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) as neg_fdbk_for_delivery_cnt,
 	-- round(count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) * 100.0 / 
 	-- count(order_id), 2) as negative_fdbk_pct
 
 	round(count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) * 100.0 / 
-	count(case when sentiment = 'negative' then 1 end), 2) as negative_fdbk_for_delivery_pct,
+	count(case when sentiment = 'negative' then 1 end), 2) as neg_fdbk_for_delivery_among_all_neg_reviews_pct,
 	
 	-- count(case when sentiment = 'positive' then 1 end) as positive_fdbk_cnt,
 	-- count(case when sentiment = 'neutral' then 1 end) as neutral_fdbk_cnt
 
 	round(count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) * 100.0 
-	/ sum(count(*)) over (), 2) as delivery_negative_reviews_pct,
+	/ sum(count(*)) over (), 2) as neg_review_for_delivery_among_all_orders_pct,
 
 	-- getting order contribution pct of each segments from total orders.
 	round(count(order_id) * 100.0 / sum(count(order_id)) over (), 2) as order_contribution_pct
@@ -392,28 +392,116 @@ order by delivery_negative_reviews_pct desc;
 */
 
 
--- analysing which company is making the most revenue/loss monthly wise.
+/*
+	This is a more personalized analysis for products, where we can find area wise category/product analysis or monthly most
+	ordered categories/products. But this personalized analysis can be done in PowerBI, so we will only be doing customer's 
+	most bought and amount spend category.
+	
+	next up customer's busket analysis.
+
+	in this analysis, we will analyze on which category customer's spend the highest amount.
+
+	After that, we will analyze monthly customer's busket. 
+*/
 
 select
-	p.brand,
-	p.category,
-	p.product_name,
-	
-	-- product stats.
-	round(sum(p.price)::decimal, 2) as total_cost_price,
-	round(sum(o.order_total)::decimal, 2) as total_order_value,
+	c.customer_id,
+	c.customer_name,
 
-	round(sum(o.order_total)::decimal - sum(p.price)::decimal, 2) as revenue_gap
+	p.category,
+	
+	count(*) as order_size,
+
+	round(sum(o.order_total)::decimal, 2) as order_value
+
+from blinkit_orders as o
+join blinkit_customer_details as c on c.customer_id = o.customer_id
+join blinkit_order_items as oi on oi.order_id = o.order_id
+join blinkit_products as p on p.product_id = oi.product_id
+group by c.customer_id, c.customer_name, p.category
+having count(*) > 1 -- filtering customer's one time purchase.
+order by c.customer_id, order_size desc, order_value desc;
+
+/* As there is less insights about customer's most ordered products, we are moving to monthly most ordered and most avg revenue 
+generated category for blinkit */
+
+with mth_rev_cte as
+(select
+	date_trunc('month', o.order_date) as order_month,
+	
+	-- product category.
+	p.category,
+	count(*) as order_cnt,
+
+	round(avg(o.order_total)::decimal, 2) as aov,
+	sum(o.order_total) as order_total_value,
+	
+	-- dense_rank() on order_size.
+	dense_rank() over (partition by date_trunc('month', o.order_date) order by count(*) desc) as order_size_rnk,
+	-- dense_rank() on aov.
+	dense_rank() over (partition by date_trunc('month', o.order_date) order by avg(o.order_total) desc) as aov_rnk
+	
 from blinkit_orders as o
 join blinkit_order_items as oi on oi.order_id = o.order_id
 join blinkit_products as p on p.product_id = oi.product_id
-group by p.brand, p.category, p.product_name
-order by p.brand;
+group by 1,2),
+
+-- select
+-- 	*
+-- from mth_rev_cte
+-- where order_size_rnk = 1 and aov_rnk = 1;
+-- this shows no product in blinkit had the most order count and also the highest average order total.
+
+/*
+	Finding product's which has not gained the first rank for order size but has achieved top rank for aov.
+	This are the product's that needs more attention as this products or category have higher revenue making potential.
+	
+*/
+
+mthly_order_cnt as (
+select
+	date_trunc('month', order_date) as order_month,
+	count(*) as order_count_mth, -- each month's total order count.
+	round(avg(order_total)::decimal, 2) as monthly_aov,
+	sum(order_total) as mth_total_order_value
+from blinkit_orders
+group by 1),
 
 
+main_cte as
+(select
+	a.order_month,
+	a.category,
+	a.order_cnt,
+	b.order_count_mth,
+	
+	a.aov,
+	b.monthly_aov,
+
+	a.order_size_rnk,
+	a.aov_rnk,
+	
+	-- analysing order contribution pct for that month's total order count.
+	round((a.order_cnt * 100.0 / b.order_count_mth)::decimal, 2) as mthly_total_order_contribution_pct,
+	round((a.order_total_value * 100.0 / b.mth_total_order_value)::decimal, 2) as monthly_order_value_contribution_pct
+	
+	
+from mth_rev_cte as a
+left join mthly_order_cnt as b on b.order_month = a.order_month
+where order_size_rnk > 1 and aov_rnk = 1
+order by order_month) -- filter to get only product's which only ranked top in aov but not top in order_size rank.
+
+select
+	category,
+	count(*) as cnt
+from main_cte
+group by category order by cnt desc;
 
 
+/*
+	Through this analysis, we have acknowledged that despite not being placed at top for total monthly order count rank, 
+	'grocery & staples', 'cold drinks & juices', 'baby care' & 'dairy & breakfast' ranked 3 times as top revenue generating
+	category, followed by 'fruits & vegetables' , 'pharmacy' & 'personal care' which ranked 2 times.
 
-
-
-
+	
+*/
