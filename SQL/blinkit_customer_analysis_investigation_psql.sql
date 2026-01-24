@@ -1,4 +1,4 @@
--- drop table if exists blinkit_cust_details;
+                     -- drop table if exists blinkit_cust_details;
 -- drop table if exists blinkit_customer_feedback;
 -- drop table if exists blinkit_orders;
 

@@ -480,6 +480,9 @@ main_cte as
 
 	a.order_size_rnk,
 	a.aov_rnk,
+
+	b.mth_total_order_value,
+	a.order_total_value,
 	
 	-- analysing order contribution pct for that month's total order count.
 	round((a.order_cnt * 100.0 / b.order_count_mth)::decimal, 2) as mthly_total_order_contribution_pct,
@@ -491,17 +494,33 @@ left join mthly_order_cnt as b on b.order_month = a.order_month
 where order_size_rnk > 1 and aov_rnk = 1
 order by order_month) -- filter to get only product's which only ranked top in aov but not top in order_size rank.
 
+-- select
+-- 	*
+-- from main_cte;
+
+-- select
+-- 	category,
+-- 	count(*) as cnt
+-- from main_cte
+-- group by category
+-- order by cnt desc;
+
 select
 	category,
-	count(*) as cnt
+	count(*) as cnt,
+	sum(order_cnt) as total_order_count,
+	round(sum(order_total_value)::decimal, 2) as total_order_value
 from main_cte
-group by category order by cnt desc;
+group by category
+order by total_order_value desc;
 
 
 /*
 	Through this analysis, we have acknowledged that despite not being placed at top for total monthly order count rank, 
 	'grocery & staples', 'cold drinks & juices', 'baby care' & 'dairy & breakfast' ranked 3 times as top revenue generating
 	category, followed by 'fruits & vegetables' , 'pharmacy' & 'personal care' which ranked 2 times.
-
 	
+	In terms of revenue making analysis, the category 'dairy & breakfast' achieved the most highest total order value of ~2.2 lakhs,
+	followed by 'grocery & staples' which made around ~1.6 lakhs of total order value.
 */
+
