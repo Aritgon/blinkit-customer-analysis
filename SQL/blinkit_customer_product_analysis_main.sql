@@ -524,3 +524,5 @@ order by total_order_value desc;
 	followed by 'grocery & staples' which made around ~1.6 lakhs of total order value.
 */
 
+
+-- analysing 
