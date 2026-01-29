@@ -55,4 +55,13 @@ from blinkit_delivery
 where delivery_time_minutes < -5; -- no anomalies.
 
 
+select
+	delivery_year,
+	delivery_distance_flag,
+	count(*) as order_cnt,
+	round(avg(delivery_time_minutes)::decimal, 2) as avg_delivery_timing
+from blinkit_delivery
+group by delivery_year, delivery_distance_flag
+order by delivery_year;
+
 

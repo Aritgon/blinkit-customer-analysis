@@ -229,8 +229,7 @@ sequential_cte as
 from product_cte
 where next_product is not null
 group by curr_product, next_product
-having count(*) > 1 -- filtering out one random order pair.
-order by product_pair_size desc)
+having count(*) > 1) -- filtering out one random order pair.
 
 /*
 	From this sequencing analysis, we acknowledged that baby wipes and vitamins was the first most bought pair.
@@ -264,7 +263,7 @@ select
 from sequential_cte as s1
 join sequential_cte as s2 on s1.curr_product = s2.next_product -- matching on the items that is first on first pair and second in second pair.
 	and s1.next_product = s2.curr_product -- matching on items that is second in first pair and first in second pair.
-where s1.curr_product > s1.next_product -- filtering out product pairs that 
+where s1.curr_product > s1.next_product -- filtering out product pairs that are same.
 order by avg_revenue_gap desc;
 
 /*
@@ -308,6 +307,10 @@ order by 3 desc;
 	
 */
 
+select *
+from blinkit_orders;
+
+
 with cust_cte as
 (select
 
@@ -319,7 +322,7 @@ with cust_cte as
 	a.rating
 	
 from blinkit_customer_feedback as a
-left join blinkit_orders as b on b.order_id = a.order_id) 
+left join blinkit_orders as b on b.order_id = a.order_id)
 /*
 	using left join to get every order each customers made from the left table.
 	
@@ -525,4 +528,183 @@ order by total_order_value desc;
 */
 
 
--- analysing 
+-- MAU analysis.
+-- select
+-- 	date_trunc('month', order_date) as order_month,
+-- 	count(*) as monthly_order_cnt,
+-- 	round(avg(order_total)::decimal, 2) as avg_order_total
+-- from blinkit_orders
+-- group by date_trunc('month', order_date)
+-- order by date_trunc('month', order_date);
+
+with product_cte as 
+(select
+	o.customer_id,
+	p.product_id,
+	p.category as curr_category,
+	
+	-- next product_category for the same customer.
+	lead(p.category) over (partition by o.customer_id order by o.order_date) as next_category,
+	lead(o.order_total) over (partition by o.customer_id order by o.order_date) as next_order_total
+
+from blinkit_orders as o
+left join blinkit_order_items as oi on oi.order_id = o.order_id
+left join blinkit_products as p on p.product_id = oi.product_id)
+
+select
+	next_category,
+	count(*) as next_order_cnt,
+	round(sum(next_order_total)::decimal, 2) as tov_for_next_category,
+	round(avg(next_order_total)::decimal, 2) as aov_for_next_category
+from product_cte
+where next_category is not null -- filtering out null values as categories.
+group by next_category
+order by next_order_cnt desc; -- 158 milliseconds, after 133 milliseconds.
+
+/*
+	According to our 'immediate next product' or 'second product after first order' analysis,
+	'dairy & breakfast' has ranked the first with 320 total order count which has aov of rupees
+	2141.93, followed by 'pet care' has ranked second with 294 total order count which has aov of 2287.18
+	and 'household care' category at the third position with 284 total order count and a aov of 2248.06 rupees.
+*/
+
+/* Now to get a good look at our product bucket analysis, we need to see why 'dairy & breakfast' was 
+the most bought next product after a purchase. 
+By doing this, we could find a pattern of customer product purchase and need. 
+
+As our dataset is largely scattered and normalized, we might find some really good insights if something
+come across as valuable for our analysis */
+
+with product_cte as
+(select
+	o.customer_id,
+	p.category,
+	lead(p.category) over (partition by o.customer_id order by o.order_date) as next_category
+	
+from blinkit_orders as o
+left join blinkit_order_items as oi on oi.order_id = o.order_id
+left join blinkit_products as p on p.product_id = oi.product_id),
+
+-- cte for next category buying frequency.
+next_prod_cte as
+(select
+	next_category,
+	count(*) order_cnt_next_category
+from product_cte
+group by next_category)
+
+select
+	a.category,
+	b.next_category,
+	count(*) as order_size,
+	b.order_cnt_next_category,
+
+	/*
+	now we are ranking next bought categories that were ordered after first purchase. 
+	the logic behind dense_rank() is we are ranking highest order count per next category to 
+	get the products that were bought before the selected 'first category'. So, if we rank by order cnt
+	we are easily getting the combo that were ordered the most.
+
+	we can also filter 5 products that were bought along side the first category of purchase.
+	*/
+	
+	dense_rank() over (partition by b.next_category order by count(*) desc) as order_size_rnk
+	
+from product_cte as a
+join next_prod_cte as b on b.next_category = a.next_category
+group by a.category, b.next_category, b.order_cnt_next_category;
+
+
+/*
+	Next up, we have 'monthly bad review pct of all reviews', 
+	this will help us identify lags that users are experiencing while interacting with blinkit's app, 
+	delivery and product experience.
+	
+*/
+
+with review_cte as
+(select
+	date_trunc('month', feedback_date) as feedback_month,
+	feedback_category,
+	count(*) as feedback_cnt,
+	count(case when sentiment = 'negative' then order_id end) as negative_rev_cnt,
+	sum(count(case when sentiment = 'negative' then order_id end)) over(partition by date_trunc('month', feedback_date)) as total_bad_review_cnt,
+	sum(count(*)) over (partition by date_trunc('month', feedback_date)) as total_order_cnt
+from blinkit_customer_feedback
+group by 1, 2),
+
+fdbk_cte as
+(select
+	feedback_month,
+	feedback_category,
+	feedback_cnt,
+	negative_rev_cnt,
+	total_order_cnt,
+	round((negative_rev_cnt * 100.0 / feedback_cnt)::decimal, 2) as neg_to_category_fdbk_ratio,
+	round((negative_rev_cnt * 100.0 / total_order_cnt)::decimal, 2) as neg_to_monthly_total_fdbk_ratio
+from review_cte
+order by feedback_month),
+
+/*
+	from here, we can analyse or find out which category of feedback got the most numbers of negative fdbk
+	and how many times it came in first rank.
+*/
+
+rank_cte as
+(select
+	feedback_month,
+	feedback_category,
+	feedback_cnt,
+	negative_rev_cnt,
+	total_order_cnt,
+
+	-- ranking for each month by category wise.
+	dense_rank() over (partition by feedback_month order by negative_rev_cnt desc) as neg_rev_rank
+from fdbk_cte)
+
+select
+	feedback_category,
+	neg_rev_rank,
+	count(*) as num_of_first_ranks
+from rank_cte
+group by feedback_category, neg_rev_rank
+order by feedback_category, neg_rev_rank;
+
+/*
+	From our analysis, we get to see that 'customer service' and 'product quality' has got the 1st rank
+	for 8 times in months interms of negative reviews. For a q-commerce like blinkit having the most negative 
+	reviews for categories like 'customer service' is a red flag because either customer's aren't happy with
+	app's service, delivery and timing or they aren't getting the right product or amount as per their need.
+
+	'delivery' category came in the second spot with a ranking score of 5. Though, for a q-commerce, negative 
+	reviews are generally expected for late delivery or other delivery related issues but blinkit surprisingly 
+	got this category at the second position.
+
+	'app experience' came in third position with the ranking score of 2. This signifies that blinkit still need 
+	to upgrade their app experience via more UX tweaking for easier navigation and shopping experience.
+
+	*** Note to keep : this analysis could still be done by each category's avg rating and sentiment count but
+	this monthly trend analysis gives more complex insights and findings.
+*/
+
+
+/*
+	Next up, we have margin difference vs total and avg generated revenue per product and product category.
+	This analysis will help us know does higher margin_difference_pct generates more average order value or not?
+*/
+select
+	margin_percentage,
+	count(distinct p.product_id) as prod_cnt,
+
+	-- each margin difference's avg mrp.
+	round(avg(p.mrp)::decimal, 2) as avg_mrp,
+
+	-- each margin difference's avg_generated order_total.
+	round(avg(o.order_total)::decimal, 2) as aov
+	
+from blinkit_orders as o
+left join blinkit_order_items as oi on oi.order_id = o.order_id
+left join blinkit_products as p on p.product_id = oi.product_id
+group by margin_percentage;
+
+-- let's continue this tomorrow.

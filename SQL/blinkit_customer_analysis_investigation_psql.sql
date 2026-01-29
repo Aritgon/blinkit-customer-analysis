@@ -135,14 +135,14 @@ select count(*) from blinkit_orders;
 select count(*) from blinkit_customer_feedback;
 select count(*) from blinkit_customer_details;
 
-select
+no null values!
+-- this also indicates that the thselect
 	*
 from blinkit_orders as a
 left join blinkit_customer_details as b on b.customer_id = a.customer_id
 left join blinkit_customer_feedback as c on c.order_id = a.order_id
 where b.customer_id is null and c.order_id is null;
--- no null data. This was expected as the datasets had no null values!
--- this also indicates that the the primary and foreign keys are absolutely working as expected and the data is still in good shape.
+-- no null data. This was expected as the datasets had e primary and foreign keys are absolutely working as expected and the data is still in good shape.
 
 
 select
