@@ -873,3 +873,21 @@ from blinkit_orders
 group by 1,2) as main
 order by order_month;
 
+/*
+	As per our analysis requirement and business questions, the analysis with SQL is pretty much done
+	and we are moving forward to dashboard building with the data (powerBI).
+
+	Before jumping onto the powerBI, I am creating some views for some important queries that gave us
+	valuable insights which will help me build the dashboards in a more controlled, clean and faster way.
+
+	Why views are important for our case? 
+		- Views are doing heavy lifting (calculation for each query) inside SQL, not powerBI model.
+		- Views are not stored physically (virtual table). So it is not bulking on memory and storage.
+		- Views are pre-calculated once it is initiated and we can query a view for infinite times.
+		- Views are easier to explain to the stakeholders. 
+		- Views requires a manual refresh if data changes which can be easily inside powerBI.
+		As views are pre-calculated, powerBI dashboards are much lighter and our dashboard will stay fresh and fast.
+
+		
+*/
+
