@@ -690,21 +690,186 @@ order by feedback_category, neg_rev_rank;
 
 /*
 	Next up, we have margin difference vs total and avg generated revenue per product and product category.
-	This analysis will help us know does higher margin_difference_pct generates more average order value or not?
+	This analysis will help us know does higher margin_difference_pct generates 
+	more average order value or not?
 */
 select
 	margin_percentage,
-	count(distinct p.product_id) as prod_cnt,
 
+	count(distinct p.category) as category_cnt,
+	count(distinct p.product_id) as prod_cnt, -- counting actual products that fall into the margin difference category.
+	count(*) as order_cnt, -- counting order counts.
+	
 	-- each margin difference's avg mrp.
 	round(avg(p.mrp)::decimal, 2) as avg_mrp,
-
+	
 	-- each margin difference's avg_generated order_total.
+	round(avg(o.order_total)::decimal, 2) as aov,
+
+	-- ratio of avg mrp and avg order value of the margin tally.
+	round((avg(p.mrp) * 100.0 / avg(o.order_total))::decimal, 2) as avg_mrp_to_order_value_ratio
+	
+from blinkit_orders as o
+left join blinkit_order_items as oi on oi.order_id = o.order_id
+left join blinkit_products as p on p.product_id = oi.product_id
+group by margin_percentage
+order by avg_mrp_to_order_value_ratio desc; -- restructuring the output on descending order per margin difference tally.
+
+
+/*
+	From our analysis, margin category of 30 got the most avg mrp to order value ratio of 33.53, 
+	surpassing margin category of both 40 and 35 (pcts). 
+	
+	Interestingly, the margin category of 35 pct got the highest order count 1438 
+	while 30 pct got 709 count of total orders.
+	
+	this signifies that product categories that falls between 30 and 35 of margin difference (mrp to order total)
+	makes more revenue for blinkit than the other categories.
+
+*/
+
+/*
+	By relating to the prev analysis and insights, we will analyse categories and products that fall into different 
+	margin difference pct and how they are making revenues for blinkit.
+*/
+
+select
+	-- firstly, we are getting the margin difference percentage.
+	p.margin_percentage,
+	
+	-- getting the product categories.
+	p.category,
+	p.product_name,
+
+	count(*) as order_cnt,
+	
+	-- avg mrp per category.
+	round(avg(p.price)::decimal, 2) as avg_price,
+	round(avg(p.mrp)::decimal, 2) as avg_mrp,
+	
+	-- avg order value.
 	round(avg(o.order_total)::decimal, 2) as aov
 	
 from blinkit_orders as o
 left join blinkit_order_items as oi on oi.order_id = o.order_id
 left join blinkit_products as p on p.product_id = oi.product_id
-group by margin_percentage;
+group by p.margin_percentage, p.category, p.product_name
+order by aov desc;
 
--- let's continue this tomorrow.
+
+/*
+	from our previous analysis, we saw that margin difference category 30 is making the most revenues per order
+	than other margin tallies. 
+
+	But when we combine both category and product, the insights are telling a different story.
+	we are seeing 'sugar' which falls under ''grocery & staples'' category making the highest average order value
+	(2501.59 Rs per order) while having margin difference (mrp to price) is only 15%!
+	
+	
+	Now, Sugar is measured by weight but not by quantity, so this insight still stays safe from data anomaly.
+*/
+
+
+/*
+	Next up we are analysis, QoQ growth of blinkit and revenue performance.
+*/
+
+with year_cte as
+(select
+	o.order_year,
+	extract(quarter from o.order_date) as order_quarter,
+
+	-- getting cost prices to calculate average company spend per product and total company spend.
+	round(avg(p.price)::decimal, 2) as avg_cost_price,
+	round(sum(p.price)::decimal, 2) as total_cost_price,
+	
+	-- normal stats.
+	count(*) as order_cnt,
+	round(avg(o.order_total)::decimal, 2) as aov,
+	round(sum(o.order_total)::decimal, 2) as total_order_value
+
+from blinkit_orders as o
+join blinkit_order_items as oi on oi.order_id = o.order_id
+join blinkit_products as p on p.product_id = oi.product_id
+group by 1,	2),
+
+qoq_cte as
+(select
+	 order_year,
+	 order_quarter,
+
+	 total_cost_price,
+	 -- last year's total cost price.
+	 lag(total_cost_price) over (order by order_year, order_quarter) as prev_cost_price,
+	 
+	 total_order_value,
+	 --	last year's total order value.
+	 lag(total_order_value) over (order by order_year, order_quarter) as prev_total_order_value
+from year_cte)
+
+select
+	order_year,
+	order_quarter,
+
+	total_cost_price,
+	prev_cost_price,
+	-- prev year total cost price.
+	round(((total_cost_price - prev_cost_price) * 100.0 / prev_cost_price)::decimal, 2) as qoq_cost_price_growth,
+
+	total_order_value,
+	prev_total_order_value,
+	-- prev year total order value.
+	round(((total_order_value - prev_total_order_value) * 100.0 / prev_total_order_value)::decimal, 2) as qoq_order_value_growth
+	
+from qoq_cte
+where prev_cost_price is not null and prev_total_order_value is not null;
+-- filtering out quarter 4 of 2024 because quarter 4 had lesser quantity of orders due to not sufficient data.
+
+
+/*
+	Now, we are analysing hourly order rate. 
+	This analysis will help us know which hour of the day gets the most orders from customers and which hour
+	derives the most revenue.
+*/
+
+select
+	*,
+
+	-- ranking based on aov for each hour in each timing division tally.
+	dense_rank() over (partition by timing_division_per_day order by aov DESC) as aov_rank
+
+from (select
+	case
+		when order_hour >= 0 and order_hour <= 6 then 'night to early morning'
+		when order_hour >= 7 and order_hour <= 12 then 'morning to day'
+		when order_hour >= 13 and order_hour <= 18 then 'noon to evening'
+		when order_hour >= 19 and order_hour <= 24 then 'night time'
+		else 'other timing'
+	end as timing_division_per_day, -- creating buckets for timings.
+	order_hour, -- using order hour to actually signify the order hour.
+	count(*) as order_cnt,
+	round(avg(order_total)::decimal, 2) as aov -- aov per order.
+from blinkit_orders
+group by order_hour) as main
+order by timing_division_per_day;
+
+
+/*
+	analysing monthly and weekly sales for blinkit.
+*/
+
+select
+	*,
+
+	-- ranking each week in a month based on aov.
+	dense_rank() over (partition by order_month order by aov DESC) as aov_rank
+
+from (select
+	TO_CHAR(order_date, 'month') as order_month,
+	'Week ' || ceil(extract (day from order_date) / 7.0) as week,
+	count(*) as order_cnt,
+	round(avg(order_total)::decimal, 2) as aov
+from blinkit_orders
+group by 1,2) as main
+order by order_month;
+

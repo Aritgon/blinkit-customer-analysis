@@ -457,13 +457,17 @@ where order_value_rnk <= 3
 group by category
 order by 2 desc;
 
--- in this categorical monthly revenue contribution analysis,
--- "dairy & breakfast" came in first position appearning 9 times
--- (in short, it has ranked 1st in 9 months regarding total order value contribution), followed by "pet care"
--- appearing 6 times through our analysis.
+/* in this categorical monthly revenue contribution analysis,
+	"dairy & breakfast" came in first position appearning 9 times
+	(in short, it has ranked 1st in 9 months regarding total order value contribution), followed by "pet care"
+	appearing 6 times through our analysis. */
 
 /* doing product analysis, which has a lower avg day gap during it's orders among customers.
 	1. this will help us know which product was in hot needs for every customer.
 	2. products which has bigger day gap. This might indicates that this products have lesser need, or needs better algorithm tweaks or may risk stock outdate
+*/
+
+/*
+	By relating to the prev analysis, 
 */
 
