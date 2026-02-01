@@ -874,6 +874,38 @@ group by 1,2) as main
 order by order_month;
 
 /*
+	We are now analysing monthly bad review count for delivery service of blinkit.
+*/
+
+select
+	o.order_month,
+	count(*) as order_cnt,
+	count(cf.feedback_id) as feedback_cnt,
+
+	-- counting negative reviews.
+	count(case when cf.sentiment = 'negative' then o.order_id end) as neg_rev_cnt,
+
+	-- counting negative reviews for delivery.
+	count(case when cf.feedback_category = 'delivery' and 
+	cf.sentiment = 'negative' then o.order_id end) as neg_rev_for_delivery_cnt,
+
+	-- neg review for delivery percentage.
+	round((count(case when cf.feedback_category = 'delivery' and 
+	cf.sentiment = 'negative' then o.order_id end) * 100.0 / 
+	count(case when cf.sentiment = 'negative' then o.order_id end))::decimal, 2) as neg_delivery_review_pct,
+
+	round((count(case when cf.feedback_category = 'delivery' and 
+	cf.sentiment = 'negative' then o.order_id end) * 100.0 / count(*))::decimal, 2) as neg_delivery_fdbk_to_all_order_pct
+	
+	
+	
+from blinkit_orders as o
+join blinkit_customer_feedback as cf on cf.order_id = o.order_id
+group by o.order_month
+order by o.order_month;
+
+
+/*
 	As per our analysis requirement and business questions, the analysis with SQL is pretty much done
 	and we are moving forward to dashboard building with the data (powerBI).
 
@@ -888,6 +920,57 @@ order by order_month;
 		- Views requires a manual refresh if data changes which can be easily inside powerBI.
 		As views are pre-calculated, powerBI dashboards are much lighter and our dashboard will stay fresh and fast.
 
-		
 */
 
+-- creating a VIEW for the RFM analysis.
+
+create view vw_rfm_customer_segment as
+with birth_month_cte as 
+(select
+	customer_id,
+	min(date_trunc('month', order_date)) as birth_month
+from blinkit_orders
+group by customer_id),
+
+-- joining with the main table to get next purchase date.
+next_month_cte as (
+select
+	b.birth_month,
+	b.customer_id,
+	(extract(year from a.order_date) - extract(year from b.birth_month)) * 12 +
+	(extract(month from a.order_date) - extract(month from b.birth_month)) as month_number
+from blinkit_orders as a
+join birth_month_cte as b on b.customer_id = a.customer_id),
+
+-- now counting each month's user first purchase and it's subsequent month's user comeback.
+cohort_month_cte as (
+select
+	birth_month,
+	month_number,
+	count(distinct customer_id) as customer_cnt
+from next_month_cte
+group by birth_month, month_number)
+
+/* using first_value() windows functions to get each birth_month's total user count.
+	that first_value() will fetch the each month's total user count who ordered for first time in the app. 
+	the subsequent month will show users who ordered in first month and cameback next month too.
+*/
+
+select
+	birth_month,
+	month_number,
+	customer_cnt,
+	first_value(customer_cnt) over (partition by birth_month) as first_month_customer_cnt_locked,
+	round(customer_cnt * 100.0 / first_value(customer_cnt) over (partition by birth_month), 2) as retention_rate
+from cohort_month_cte;
+
+-- analysing what is the average retention rate for each month.
+
+-- select
+-- 	month_number,
+-- 	round(avg(retention_rate)::decimal, 3) as avg_retention_rate
+-- from cohort_analysis_main
+-- group by month_number
+-- order by month_number;
+
+-- select * from vw_rfm_customer_segment;
