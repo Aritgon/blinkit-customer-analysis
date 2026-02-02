@@ -974,3 +974,12 @@ from cohort_month_cte;
 -- order by month_number;
 
 -- select * from vw_rfm_customer_segment;
+
+select
+	month_number,
+	round(avg(retention_rate)::decimal, 2) as avg_retention_rate
+from vw_rfm_customer_segment
+group by month_number
+order by month_number;
+
+drop view if exists vw_rfm_customer_segment;
