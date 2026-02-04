@@ -499,15 +499,6 @@ from main_cte;
 */
 
 
--- MAU analysis.
--- select
--- 	date_trunc('month', order_date) as order_month,
--- 	count(*) as monthly_order_cnt,
--- 	round(avg(order_total)::decimal, 2) as avg_order_total
--- from blinkit_orders
--- group by date_trunc('month', order_date)
--- order by date_trunc('month', order_date);
-
 with product_cte as 
 (select
 	o.customer_id,
@@ -535,56 +526,9 @@ order by next_order_cnt desc; -- 158 milliseconds, after 133 milliseconds.
 /*
 	According to our 'immediate next product' or 'second product after first order' analysis,
 	'dairy & breakfast' has ranked the first with 320 total order count which has aov of rupees
-	2141.93, followed by 'pet care' has ranked second with 294 total order count which has aov of 2287.18
+	2141.93, followed by 'pet care', which has ranked second with 294 total order count and an aov of 2287.18
 	and 'household care' category at the third position with 284 total order count and a aov of 2248.06 rupees.
 */
-
-/* Now to get a good look at our product bucket analysis, we need to see why 'dairy & breakfast' was 
-the most bought next product after a purchase. 
-By doing this, we could find a pattern of customer product purchase and need. 
-
-As our dataset is largely scattered and normalized, we might find some really good insights if something
-come across as valuable for our analysis */
-
-with product_cte as
-(select
-	o.customer_id,
-	p.category,
-	lead(p.category) over (partition by o.customer_id order by o.order_date) as next_category
-	
-from blinkit_orders as o
-left join blinkit_order_items as oi on oi.order_id = o.order_id
-left join blinkit_products as p on p.product_id = oi.product_id),
-
--- cte for next category buying frequency.
-next_prod_cte as
-(select
-	next_category,
-	count(*) order_cnt_next_category
-from product_cte
-group by next_category)
-
-select
-	a.category,
-	b.next_category,
-	count(*) as order_size,
-	b.order_cnt_next_category,
-
-	/*
-	now we are ranking next bought categories that were ordered after first purchase. 
-	the logic behind dense_rank() is we are ranking highest order count per next category to 
-	get the products that were bought before the selected 'first category'. So, if we rank by order cnt
-	we are easily getting the combo that were ordered the most.
-
-	we can also filter 5 products that were bought along side the first category of purchase.
-	*/
-	
-	dense_rank() over (partition by b.next_category order by count(*) desc) as order_size_rnk
-	
-from product_cte as a
-join next_prod_cte as b on b.next_category = a.next_category
-group by a.category, b.next_category, b.order_cnt_next_category;
-
 
 /*
 	Next up, we have 'monthly bad review pct of all reviews', 
@@ -633,6 +577,8 @@ rank_cte as
 	dense_rank() over (partition by feedback_month order by negative_rev_cnt desc) as neg_rev_rank
 from fdbk_cte)
 
+select * from rank_cte;
+
 select
 	feedback_category,
 	neg_rev_rank,
@@ -664,6 +610,8 @@ order by feedback_category, neg_rev_rank;
 	This analysis will help us know does higher margin_difference_pct generates 
 	more average order value or not?
 */
+
+
 select
 	margin_percentage,
 
@@ -742,7 +690,7 @@ order by aov desc;
 
 
 /*
-	Next up we are analysis, QoQ growth of blinkit and revenue performance.
+	Next up we are analysing, QoQ growth of blinkit and revenue performance.
 */
 
 with year_cte as
@@ -792,8 +740,8 @@ select
 	-- prev year total order value.
 	round(((total_order_value - prev_total_order_value) * 100.0 / prev_total_order_value)::decimal, 2) as qoq_order_value_growth
 	
-from qoq_cte
-where prev_cost_price is not null and prev_total_order_value is not null;
+from qoq_cte;
+-- where prev_cost_price is not null and prev_total_order_value is not null;
 -- filtering out quarter 4 of 2024 because quarter 4 had lesser quantity of orders due to not sufficient data.
 
 

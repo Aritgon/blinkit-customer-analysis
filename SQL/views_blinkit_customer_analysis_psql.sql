@@ -303,4 +303,32 @@ select
 	dense_rank() over (partition by order_month order by mthly_total_order_count_contribution_pct desc) as monthly_order_count_cont_rank
 from main_cte;
 
-select * from vw_monthly_product_analysis;
+-- select * from vw_monthly_product_analysis;
+
+-- ============================================================
+-- 5. View : marginal difference analysis.
+
+create or replace view vw_marginal_diff as
+select
+	-- firstly, we are getting the margin difference percentage.
+	p.margin_percentage,
+	
+	-- getting the product categories.
+	p.category,
+	p.product_name,
+
+	count(*) as order_cnt,
+	
+	-- avg mrp per category.
+	round(avg(p.price)::decimal, 2) as avg_price,
+	round(avg(p.mrp)::decimal, 2) as avg_mrp,
+	
+	-- avg order value.
+	round(avg(o.order_total)::decimal, 2) as aov
+	
+from blinkit_orders as o
+left join blinkit_order_items as oi on oi.order_id = o.order_id
+left join blinkit_products as p on p.product_id = oi.product_id
+group by p.margin_percentage, p.category, p.product_name;
+
+select * from vw_marginal_diff
