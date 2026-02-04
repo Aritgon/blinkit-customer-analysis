@@ -294,22 +294,16 @@ select
 	next_category,
 
 	count(*) as pair_ordering_size,
-	round(avg(curr_order_total + next_order_total)::decimal, 2) as avg_revenue_per_pair
+	round(avg(curr_order_total + next_order_total)::decimal, 2) as avg_revenue_per_pair,
+	
+	-- we are analysis products that was bought after a certain product and how many much revenue they made.
+	dense_rank() over (partition by curr_category order by avg(curr_order_total + next_order_total) desc) as revenue_rank
 from category_cte
 where next_category is not null
 group by 1, 2
-having count(*) > 1
-order by 3 desc;
+having count(*) > 1; -- filtering category sequence that was only ordered one time.
 
 -- Next up, we are going to do correlation analysis between delivery timing and customer feedback rating per customer.
-
-/*
-	
-*/
-
-select *
-from blinkit_orders;
-
 
 with cust_cte as
 (select
@@ -381,24 +375,27 @@ order by delivery_negative_reviews_pct desc;
 	according to analysis, surprisingly, the positive category which is 'slightly fast delivery' got the most negative reviews 
 	for delivery being late than promised delivery time among all orders. 
 	
-	This category had an average time (promised_delivery_time - actual_delivery_time) 2.47 in minutes.
+	This category had an average time (promised_delivery_time - actual_delivery_time) of  2.47 in minutes.
 	it signifies that customers aren't satisfied with blinkit delivery timing even 
 	if the average between promised and actual timing is 2.47 minutes.
+	now in this analysis, 2.47 minutes means delivery agents still reached at the location `2 minutes ago` of the
+	promised delivery timing. now this category is the only positive category interms of delivery timing, all other
+	category is in negative which surprises this finding even more.
 
+	
 	After that, we have 'slightly late delivery' at the second position where the most negative reviews 
 	for delivery being late than promised delivery time among all orders.
 	This category had an average timing (promised_delivery_time - actual_delivery_time) as -3.02 in minutes.
 
 	both of this segments have the most combined negative review pct among all orders (~6%) which maintained
 	a close delivery timing while sometimes being 2.47 minutes fast (avg) and 3.02 minutes late than promised delivery time.
-
 */
 
 
 /*
 	This is a more personalized analysis for products, where we can find area wise category/product analysis or monthly most
 	ordered categories/products. But this personalized analysis can be done in PowerBI, so we will only be doing customer's 
-	most bought and amount spend category.
+	most bought and amount they have spend on which category.
 	
 	next up customer's busket analysis.
 
@@ -428,7 +425,7 @@ order by c.customer_id, order_size desc, order_value desc;
 /* As there is less insights about customer's most ordered products, we are moving to monthly most ordered and most avg revenue 
 generated category for blinkit */
 
-with mth_rev_cte as
+with mthly_categorical_order_cte as
 (select
 	date_trunc('month', o.order_date) as order_month,
 	
@@ -437,39 +434,25 @@ with mth_rev_cte as
 	count(*) as order_cnt,
 
 	round(avg(o.order_total)::decimal, 2) as aov,
-	sum(o.order_total) as order_total_value,
-	
-	-- dense_rank() on order_size.
-	dense_rank() over (partition by date_trunc('month', o.order_date) order by count(*) desc) as order_size_rnk,
-	-- dense_rank() on aov.
-	dense_rank() over (partition by date_trunc('month', o.order_date) order by avg(o.order_total) desc) as aov_rnk
-	
+	round(sum(o.order_total)::decimal, 2) as order_total_value
+
 from blinkit_orders as o
 join blinkit_order_items as oi on oi.order_id = o.order_id
 join blinkit_products as p on p.product_id = oi.product_id
 group by 1,2),
 
--- select
--- 	*
--- from mth_rev_cte
--- where order_size_rnk = 1 and aov_rnk = 1;
--- this shows no product in blinkit had the most order count and also the highest average order total.
-
 /*
-	Finding product's which has not gained the first rank for order size but has achieved top rank for aov.
-	This are the product's that needs more attention as this products or category have higher revenue making potential.
-	
+	Next cte will be about per month's total order count, avg order value and total order value.
 */
 
-mthly_order_cnt as (
+mthly_order_cte as (
 select
 	date_trunc('month', order_date) as order_month,
 	count(*) as order_count_mth, -- each month's total order count.
 	round(avg(order_total)::decimal, 2) as monthly_aov,
-	sum(order_total) as mth_total_order_value
+	round(sum(order_total)::decimal, 2) as mth_total_order_value
 from blinkit_orders
 group by 1),
-
 
 main_cte as
 (select
@@ -481,42 +464,30 @@ main_cte as
 	a.aov,
 	b.monthly_aov,
 
-	a.order_size_rnk,
-	a.aov_rnk,
-
-	b.mth_total_order_value,
 	a.order_total_value,
+	b.mth_total_order_value,
 	
-	-- analysing order contribution pct for that month's total order count.
-	round((a.order_cnt * 100.0 / b.order_count_mth)::decimal, 2) as mthly_total_order_contribution_pct,
+	-- analysing order contribution ratio for that month's total order count.
+	round((a.order_cnt * 100.0 / b.order_count_mth)::decimal, 2) as mthly_total_order_count_contribution_pct,
 	round((a.order_total_value * 100.0 / b.mth_total_order_value)::decimal, 2) as monthly_order_value_contribution_pct
 	
-	
-from mth_rev_cte as a
-left join mthly_order_cnt as b on b.order_month = a.order_month
-where order_size_rnk > 1 and aov_rnk = 1
-order by order_month) -- filter to get only product's which only ranked top in aov but not top in order_size rank.
+from mthly_categorical_order_cte as a
+left join mthly_order_cte as b on b.order_month = a.order_month)
 
--- select
--- 	*
--- from main_cte;
-
--- select
--- 	category,
--- 	count(*) as cnt
--- from main_cte
--- group by category
--- order by cnt desc;
+/*
+	Using dense_rank() on order_count_pct and order_value_pct to rank categories that made the highest revenue
+	for a month and also order count ranking.
+*/
 
 select
-	category,
-	count(*) as cnt,
-	sum(order_cnt) as total_order_count,
-	round(sum(order_total_value)::decimal, 2) as total_order_value
-from main_cte
-group by category
-order by total_order_value desc;
+	*,
 
+	-- dense_rank() on revenue first.
+	dense_rank() over (partition by order_month order by monthly_order_value_contribution_pct desc) as monthly_order_value_cont_rank,
+
+	-- dense_rank() on order count.
+	dense_rank() over (partition by order_month order by mthly_total_order_count_contribution_pct desc) as monthly_order_count_cont_rank
+from main_cte;
 
 /*
 	Through this analysis, we have acknowledged that despite not being placed at top for total monthly order count rank, 
