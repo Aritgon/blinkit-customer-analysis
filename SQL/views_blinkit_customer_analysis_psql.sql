@@ -179,6 +179,7 @@ where next_category is not null
 group by 1, 2
 having count(*) > 1; -- filtering category sequence that was only ordered one time.
 
+select * from vw_category_sequencing;
 
 -- ==================================================================================
 -- 4. View : how delivery timing affected customer feedback by every customer and every order.
@@ -331,4 +332,4 @@ left join blinkit_order_items as oi on oi.order_id = o.order_id
 left join blinkit_products as p on p.product_id = oi.product_id
 group by p.margin_percentage, p.category, p.product_name;
 
-select * from vw_marginal_diff
+select * from vw_marginal_diff order by aov desc;
