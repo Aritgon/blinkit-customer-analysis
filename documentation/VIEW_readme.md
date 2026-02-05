@@ -25,11 +25,10 @@
         - Easier to understand for non-tech peoples or stakeholders.
 ```
 
-========================================
-## Views created for our analysis
+# Views created for our analysis
 ========================================
 
-### 1. monthly cohort and customer retention view
+## 1. monthly cohort and customer retention view
 
 > Description about columns:
 - **birth_month** -> all the months that users made their first purchase or order as 'birth month'.
@@ -39,7 +38,22 @@
 - **retention_rate** -> percentage of each month's customer and first month's total customer count. This column signifies, the retention of customer who came back after their first purchase in a later month.
 
 
-### 2. RFM customer segment view
+### =============== 🔍 insights ===============
+
+- This analysis indicates an interesting customer behaviour for blinkit.
+		- Customer retention (order count for our case) generally drops to an avg of approx. 9% 
+		after their first month of order (which is generally at 100%).
+
+		- After that drop off, blinkit generally maintains an avg retention rate of 9% every month after customer's first order.
+
+		- This signifies a big and decisive step has to be taken to attract more purchase from existing customers, after that blinkit can focus more on new customers.
+		
+		- Some recommendations : blinkit can use customer loyalty programs, customer profiling (such as membership plans, bonus points etc) and targetted ad to customers who are in need of certain products (customer that are searching for a specific product but they can't find a good deal on it).
+
+		- Like big e-commerce stores like FlipKart, Amazon they can also launch timely events such as republic day events, october sales during peak festival time etc.
+
+
+## 2. RFM customer segment view
 
 > Description about columns:
 - **r_score** -> shows customer recent purchase by substracting it from the latest order date of the dataset.
@@ -52,7 +66,10 @@
 - **cust_size_pct** -> percentage of customer shares to total distinct customer count. 
 
 
-### 3. category sequencing(which category was ordered after a order) view
+### =============== 🔍 insights ===============
+
+
+## 3. category sequencing(which category was ordered after a order) view
 
 > Description about columns:
 - **curr_category** -> shows the first category which was order before another order.
@@ -62,7 +79,10 @@
 - **revenue_rank** -> revenue rank by locking curr_category to see which combo paired with the curr category made the most revenue.
 
 
-### 4. delivery timing effect on customer's feedback view.
+### ========= 🔍 insights =========
+
+
+## 4. delivery timing effect on customer's feedback view.
 
 > Description about columns:
 - **delivery_timing_range** -> separated timing range using case() function.
@@ -74,8 +94,11 @@
 - **order_contribution_pct** -> percent of orders among total order count.
 
 
+### ========= 🔍 insights =========
 
-### 5. monthly product performance analysis view
+
+
+## 5. monthly product performance analysis view
 
 > Description about columns:
 - **order_month** -> order months.
@@ -92,7 +115,10 @@
 - **monthly_order_count_cont_rank** -> - **monthly_order_value_cont_rank** -> contribution rank of each month's total order count per category.
 
 
-### 6. product marginal difference analysis view
+### ========= 🔍 insights =========
+
+
+## 6. product marginal difference analysis view
 
 > Description about columns:
 - **margin_percentage** -> marginal difference of product's mrp and cost price.
@@ -104,3 +130,8 @@
 - **aov** -> average order value per product.
 
 > all views are added to the database and is ready for powerBI data connection build-up.
+
+
+### ========= 🔍 insights =========
+
+
