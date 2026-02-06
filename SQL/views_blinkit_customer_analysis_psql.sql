@@ -5,26 +5,6 @@
 */
 
 -- 1. Customer cohort view.
-/*
-	Why?
-		- This analysis indicates an interesting customer behaviour for blinkit. 
-		Customer retention (order count for our case) generally drops to an avg of approx. 9% 
-		after their first month of order (which is generally at 100%).
-
-		- After that drop off, blinkit generally maintains an avg retention rate of 9% every month after customer's
-		first order.
-
-		- This signifies a big and decisive step has to be taken to attract more purchase from existing customers, 
-		after that blinkit can focus more on new customers.
-		
-		- Some recommendations : blinkit can use customer loyalty programs, customer profiling (such as membership plans
-		, bonus points etc. Blinkit also need to put more effort on better ad management and publish. 
-
-		- Like big e-commerce stores like FlipKart, Amazon they can also launch timely events such as republic day events,
-		october sales during peak festival time etc.
-		
-*/
-
 
 create view vw_monthly_retention_rate as
 with birth_month_cte as 
@@ -139,8 +119,11 @@ select
 	-- using whole customer_base to get pct of customers from each segments.
 	round(count(distinct customer_id) * 100.0 / (select count(distinct customer_id) from blinkit_orders), 2) as cust_size_pct
 from score_cte
-group by r_score, f_score, m_score, rfm_bins
-order by cust_size_pct desc;
+group by r_score, f_score, m_score, rfm_bins;
+
+-- drop view if exists vw_rfm_customer_segment;
+
+select * from vw_rfm_customer_segment order by cust_cnt desc;
 
 -- ==============================================================================
 -- 3. View of next category propensity or category sequencing.
@@ -179,7 +162,9 @@ where next_category is not null
 group by 1, 2
 having count(*) > 1; -- filtering category sequence that was only ordered one time.
 
-select * from vw_category_sequencing;
+select * from vw_category_sequencing
+where revenue_rank = 1 -- filtering combos that made the revenue.
+order by avg_revenue_per_pair DESC;
 
 -- ==================================================================================
 -- 4. View : how delivery timing affected customer feedback by every customer and every order.
@@ -222,14 +207,15 @@ select
 	count(case when sentiment = 'negative' then 1 end) as negative_fdbk_cnt,
 
 	count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) as neg_fdbk_for_delivery_cnt,
-	-- round(count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) * 100.0 / 
-	-- count(order_id), 2) as negative_fdbk_pct
 
 	round(count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) * 100.0 / 
 	count(case when sentiment = 'negative' then 1 end), 2) as neg_fdbk_for_delivery_among_all_neg_reviews_pct,
 
+	round(count(case when sentiment = 'negative' and feedback_category = 'delivery' then 1 end) * 100.0 / 
+	SUM(count(*)) OVER (), 2) as neg_review_for_delivery_among_all_orders_pct, 
+	
 	-- getting order contribution pct of each segments from total orders.
-	round(count(order_id) * 100.0 / sum(count(order_id)) over (), 2) as order_contribution_pct
+	round(count(order_id) * 100.0 / SUM(count(order_id)) OVER (), 2) as order_contribution_pct
 	
 from cust_cte
 group by delivery_timing_range;
@@ -304,7 +290,8 @@ select
 	dense_rank() over (partition by order_month order by mthly_total_order_count_contribution_pct desc) as monthly_order_count_cont_rank
 from main_cte;
 
--- select * from vw_monthly_product_analysis;
+select * from vw_monthly_product_analysis 
+where monthly_order_value_cont_rank = 1 and monthly_order_count_cont_rank = 1;
 
 -- ============================================================
 -- 5. View : marginal difference analysis.
@@ -332,4 +319,17 @@ left join blinkit_order_items as oi on oi.order_id = o.order_id
 left join blinkit_products as p on p.product_id = oi.product_id
 group by p.margin_percentage, p.category, p.product_name;
 
-select * from vw_marginal_diff order by aov desc;
+select * from vw_marginal_diff;
+
+select 
+	margin_percentage,
+	category,
+	sum(order_cnt) as total_order_cnt,
+	round(avg(avg_price)::decimal, 2) as avg_price,
+	round(avg(avg_mrp)::decimal, 2) as avg_mrp,
+
+	round(avg(aov)::decimal, 2) as avg_aov
+	
+from vw_marginal_diff
+group by margin_percentage, category
+order by avg_aov desc;

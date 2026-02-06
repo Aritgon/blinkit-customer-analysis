@@ -470,4 +470,3 @@ order by 2 desc;
 /*
 	By relating to the prev analysis, 
 */
-
