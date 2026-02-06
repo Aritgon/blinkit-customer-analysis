@@ -48,9 +48,8 @@ from cohort_month_cte;
 
 -- avg retention rate of every month.
 select
-	round(avg(retention_rate)::decimal, 2) as avg_retention_rate
-from vw_monthly_retention_rate
-where month_number != 0;
+	*
+from vw_monthly_retention_rate;
 
 -- =======================================================================================
 -- 2. RFM customer segment view.
