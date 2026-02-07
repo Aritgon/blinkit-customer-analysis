@@ -122,7 +122,17 @@ group by r_score, f_score, m_score, rfm_bins;
 
 -- drop view if exists vw_rfm_customer_segment;
 
-select * from vw_rfm_customer_segment order by cust_cnt desc;
+-- select * from vw_rfm_customer_segment order by cust_cnt desc;
+
+select
+	round(avg(avg_monetary)::decimal, 2) as avg_monetary
+from vw_rfm_customer_segment
+where r_score = 5
+union all
+select
+	round(avg(avg_monetary)::decimal, 2) as avg_monetary
+from vw_rfm_customer_segment
+where r_score != 5;
 
 -- ==============================================================================
 -- 3. View of next category propensity or category sequencing.
@@ -332,3 +342,4 @@ select
 from vw_marginal_diff
 group by margin_percentage, category
 order by avg_aov desc;
+
