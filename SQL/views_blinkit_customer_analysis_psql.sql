@@ -48,8 +48,9 @@ from cohort_month_cte;
 
 -- avg retention rate of every month.
 select
-	*
-from vw_monthly_retention_rate;
+	avg(retention_rate) as avg_retention_rate
+from vw_monthly_retention_rate
+where retention_rate != 100;
 
 -- =======================================================================================
 -- 2. RFM customer segment view.
@@ -343,3 +344,33 @@ from vw_marginal_diff
 group by margin_percentage, category
 order by avg_aov desc;
 
+-- 6. view for month-over-month revenue growth for blinkit.
+
+create or replace view vw_mom_growth_rate as
+with month_cte as (
+SELECT
+	extract(month from order_date) as order_month_idx,
+	TO_CHAR(order_date, 'month') as order_month,
+	COUNT(*) as order_cnt,
+	round(sum(order_total)::decimal, 2) as tov
+from blinkit_orders
+group by 1, 2
+)
+
+select
+	order_month_idx,
+	order_month,
+
+	order_cnt,
+	lag(order_cnt) over (order by order_month_idx, order_month) as prev_month_order_cnt,
+	round(((order_cnt - lag(order_cnt) over (order by order_month_idx, order_month)) * 100.0 / 
+	lag(order_cnt) over (order by order_month_idx, order_month))::decimal, 2) as mom_order_size_growth_pct,
+	
+	tov,
+	lag(tov) over (order by order_month_idx, order_month) prev_month_tov,
+	round(((tov - lag(tov) over (order by order_month_idx, order_month)) * 100.0 / 
+	lag(tov) over (order by order_month_idx, order_month))::decimal, 2) as mom_revenue_growth_pct
+from month_cte;
+
+
+select * from vw_mom_growth_rate;
