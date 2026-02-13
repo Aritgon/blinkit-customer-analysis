@@ -65,3 +65,11 @@ group by delivery_year, delivery_distance_flag
 order by delivery_year;
 
 
+-- checking year-wise monthly average delivery time.
+select
+	delivery_year,
+	delivery_month,
+	round(avg(delivery_time_minutes)::decimal, 2) as avg_delivery_time_in_minutes
+from blinkit_delivery
+group by delivery_year, delivery_month
+order by delivery_year, delivery_month;
