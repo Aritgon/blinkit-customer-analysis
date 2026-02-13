@@ -902,3 +902,33 @@ group by month_number
 order by month_number;
 
 drop view if exists vw_rfm_customer_segment;
+
+
+-- analysing year-on-year and monthly revenue per order (order_total - unit_price * mrp)
+
+with cte as (
+select 
+	o.order_date,
+	o.order_id,
+	oi.product_id,
+	oi.quantity,
+	oi.unit_price,
+	o.order_total,
+
+	-- value check.
+	round((oi.unit_price * oi.quantity)::decimal , 2)as original_price
+from blinkit_order_items as oi
+join blinkit_orders as o on o.order_id = oi.order_id)
+
+select
+	extract(year from order_date) as order_year,
+	extract(month from order_date) as order_month,
+
+	round(sum(order_total)::decimal, 2) as total_order_value,
+	round(sum(original_price)::decimal, 2) as total_original_price,
+	round((sum(order_total) - sum(original_price))::decimal, 2) as total_revenue,
+
+	(sum(original_price) / sum(order_total)) as total_revenue_ratio
+from cte
+group by 1,2
+order by 1,2;
