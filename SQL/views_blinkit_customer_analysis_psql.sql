@@ -111,6 +111,7 @@ select
 	(r_score * 100 + f_score * 10 + m_score) as rfm_bins,
 
 	round(avg(recency)::decimal, 2) as avg_recency,
+	round(avg(frequency)::decimal, 2) as avg_frequency,
 	round(avg(monetary)::decimal, 2) as avg_monetary,
 	
 	-- counting customers.
@@ -123,7 +124,9 @@ group by r_score, f_score, m_score, rfm_bins;
 
 -- drop view if exists vw_rfm_customer_segment;
 
--- select * from vw_rfm_customer_segment order by cust_cnt desc;
+select * from vw_rfm_customer_segment;
+
+
 
 select
 	round(avg(avg_monetary)::decimal, 2) as avg_monetary
