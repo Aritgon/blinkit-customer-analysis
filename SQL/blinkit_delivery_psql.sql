@@ -55,6 +55,23 @@ from blinkit_delivery
 where delivery_time_minutes < -5; -- no anomalies.
 
 
+alter table blinkit_delivery
+add column distance_flag_dupl text;
+
+update blinkit_delivery
+set distance_flag_dupl =
+case	when distance_km <= 1 then 'below 1 km'
+	when distance_km <= 2 then 'below 2 km'
+	when distance_km <= 3 then 'below 3 km'
+	when distance_km <= 4 then 'below 4 km'
+	when distance_km <= 5 then 'below 5 km'
+else 'above 5 km'
+end;
+
+alter table blinkit_delivery
+rename column distance_flag_dupl TO delivery_distance_category;
+
+
 select
 	delivery_year,
 	delivery_distance_flag,
