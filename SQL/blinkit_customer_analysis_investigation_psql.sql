@@ -856,4 +856,17 @@ from cte
 where next_order_timing > gap_between_promised_actual_time; -- filtering out null and also which delivery timing that was poor than the previous delivery timing.
 -- out of all orders, only ~26% orders faced a delivery timing improved, while ~16% of orders got their delivery before their promised timing.
 
+-- checking customers who made more than one order.
+with repeated_cust as
+(select
+	customer_id,
+	count(*) as order_frequency
+from blinkit_orders
+group by customer_id
+-- filtering out one time orders per customer.
+having count(order_id) > 1)
 
+select
+	round((count(customer_id) * 100 / 
+	(select count (distinct customer_id) from blinkit_orders))::decimal, 4) as repeated_customer_pct 
+from repeated_cust;

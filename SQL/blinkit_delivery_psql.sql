@@ -90,3 +90,20 @@ select
 from blinkit_delivery
 group by delivery_year, delivery_month
 order by delivery_year, delivery_month;
+
+-- Getting orders that received the most bad reviews for delivery timing from different customers segments.
+-- This way we will get to know which customer group needs more attention to prevent churning and AOV to drop.
+
+select
+	cd.customer_segment,
+	count(*) as count_of_orders,
+	count(case when cf.feedback_category = 'delivery' then 1 end) as delivery_related_reviews,
+	count(case when cf.feedback_category = 'delivery' 
+	and cf.sentiment = 'negative' then 1 end) as neg_delivery_review,
+	
+	round((count(case when cf.feedback_category = 'delivery' 
+	and cf.sentiment = 'negative' then 1 end) * 100 / count(*))::decimal, 2) as bad_delivery_review_pct
+from blinkit_customer_details as cd
+join blinkit_customer_feedback as cf on cf.customer_id = cd.customer_id
+group by 1;
+
