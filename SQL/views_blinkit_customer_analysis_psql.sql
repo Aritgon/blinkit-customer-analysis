@@ -50,6 +50,7 @@ from cohort_month_cte;
 select
 	avg(retention_rate) as avg_retention_rate
 from vw_monthly_retention_rate
+-- filtering first months which are always at 100%
 where retention_rate != 100;
 
 -- =======================================================================================
@@ -123,9 +124,7 @@ from score_cte
 group by r_score, f_score, m_score, rfm_bins;
 
 -- drop view if exists vw_rfm_customer_segment;
-
-select * from vw_rfm_customer_segment;
-
+-- select * from vw_rfm_customer_segment;
 
 
 select
@@ -332,7 +331,7 @@ left join blinkit_order_items as oi on oi.order_id = o.order_id
 left join blinkit_products as p on p.product_id = oi.product_id
 group by p.margin_percentage, p.category, p.product_name;
 
-select * from vw_marginal_diff;
+-- select * from vw_marginal_diff;
 
 select 
 	margin_percentage,
@@ -375,5 +374,25 @@ select
 	lag(tov) over (order by order_month_idx, order_month))::decimal, 2) as mom_revenue_growth_pct
 from month_cte;
 
-
 select * from vw_mom_growth_rate;
+
+-- 7. View of average negative review pct of orders for each customer.
+
+create or replace view vw_avg_neg_review as
+select
+	o.customer_id,
+	count(*) as order_frequency,
+	count(case when cf.sentiment = 'negative' then 1 end) as bad_review_orders,
+
+	-- calculating percentage of customers which received bad reviews or the feedback sentiment of the customer was 
+	-- negative.
+	round((count(case when cf.sentiment = 'negative' then 1 end) * 100 /
+	nullif(count(*), 0))::decimal, 2) as bad_review_orders_pct
+	
+from blinkit_orders as o
+join blinkit_customer_feedback as cf on cf.order_id = o.order_id
+group by o.customer_id
+-- applying filter to exclude customers who have only one order
+having count(*) > 1
+
+select * from vw_avg_neg_review;

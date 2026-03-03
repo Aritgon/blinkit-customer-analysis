@@ -870,3 +870,31 @@ select
 	round((count(customer_id) * 100 / 
 	(select count (distinct customer_id) from blinkit_orders))::decimal, 4) as repeated_customer_pct 
 from repeated_cust;
+
+/* getting avg rating of each customer's lifetime order frequency. 
+This will help to understand customer's average satisfaction level 
+for their total lifetime value of total order frequency
+*/
+
+with primary_cte as
+(select
+	o.customer_id,
+	count(*) as order_frequency,
+	count(case when cf.sentiment = 'negative' then 1 end) as bad_review_orders,
+
+	-- calculating percentage of customers which received bad reviews or the feedback sentiment of the customer was 
+	-- negative.
+	round((count(case when cf.sentiment = 'negative' then 1 end) * 100 /
+	count(*))::decimal, 2) as bad_review_orders_pct
+	
+from blinkit_orders as o
+join blinkit_customer_feedback as cf on cf.order_id = o.order_id
+group by o.customer_id
+-- applying filter to exclude customers who have only one order
+having count(*) > 1)
+
+-- getting average 'bad_review_orders_pct' for a slicer card.
+-- select
+-- 	round(avg(bad_review_orders_pct)::decimal, 2) as avg_pct_of_bad_reviews
+-- from primary_cte;
+
