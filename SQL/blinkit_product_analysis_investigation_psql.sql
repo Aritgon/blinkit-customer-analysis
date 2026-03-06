@@ -470,3 +470,117 @@ order by 2 desc;
 /*
 	By relating to the prev analysis, 
 */
+
+
+-- analysing which was produced ordered the most in quantity? (checking this query for powerBI card)
+select
+	p.product_id,
+	p.product_name,
+	count(*) as order_frequency,
+	sum(oi.quantity) as total_quantities_sold
+from blinkit_order_items as oi
+join blinkit_products as p on p.product_id = oi.product_id
+group by 1, 2
+order by 4 desc
+limit 1;
+
+-- same for checking product has gained more total order value.
+-- but I have to keep an eye for the column or data which will give a decisive factor to actually identify how is the profit for that product. 
+with data_chq_cte as
+(select
+	o.order_id,
+	sum(oi.quantity) as quantities_sold,
+	sum(oi.unit_price) as total_unit_price,
+	(sum(oi.quantity) * sum(oi.unit_price)) as total_common_order_value,
+	round(sum(o.order_total)::decimal, 2) as total_order_value,
+
+	/*
+		There seems a bit of anomaly for the decisive revenue factor for each product.
+		to put simply, for some orders, the gap or ratio between summation of unit_price and total_order_value
+		doesn't add upto normal calculations.
+	*/
+
+	-- ratio between total_order_value and total_order_value_common to see if there is any outliers.
+	round(sum(o.order_total)::decimal / 
+	(sum(oi.quantity) * sum(oi.unit_price))::decimal, 2) as given_ot_to_calculated_ot_ratio
+	
+from blinkit_orders as o
+join blinkit_order_items as oi on oi.order_id = o.order_id
+join blinkit_products as p on p.product_id = oi.product_id
+group by 1)
+
+select
+	-- binning the outliers by an imagined and viable given price to real price ratio to spot the outlier pct of the data.
+	case when given_ot_to_calculated_ot_ratio <= 0.49 
+	then '(< 0.49) heavily discounted outliers (heavily discounted conditions, more than 70% of discount!)'
+	
+	when given_ot_to_calculated_ot_ratio >= 0.5 and given_ot_to_calculated_ot_ratio <= 1.25
+	then '(0.5 --> 1.25) safety net'
+	
+	else '(>2) heavily charged'
+	end as outlier_classification,
+	count(*) as row_cnts,
+	round((count(*) * 100 / sum(count(*)) over () )::decimal, 2) as pct_of_outlier_portions
+from data_chq_cte
+group by outlier_classification;
+
+-- getting max/min ratio of the whole dataset (from the data_chq_cte). 
+
+select
+	min(given_ot_to_calculated_ot_ratio) as minimum_level_outlier, -- 0.1%
+	max(given_ot_to_calculated_ot_ratio) as maximum_level_outlier -- 344.48%
+from data_chq_cte;
+
+/*
+	**Conclusion**
+	We've found that there are some orders which was discounted upto 90% and also charged 300x times more
+	than actual order value of those particular orders.
+
+	Besides that, we've also found that there are ~72% of orders in this dataset that were charged 2x
+	of the actual bill value of that order.
+
+	Only ~18% of data is viable for our analysis project which has a outlier classification between 0.5 and 1.25 as 
+	a viable order value range.
+	
+	***************************************************************************************************
+	After having a thorough-out study of the data, 
+	the data we have is currently okay for a q-commerce market, but we are only filtering out orders
+	that may have issues such as data entry errors, wrong calculations, etc. 
+	
+	So, Instead of removing outlier datas, we are transforming this view as a view to "audit" the data inside powerBI.
+	This view will be used as a page-level-filter (applicable for all pages) to filter out the anomalies or 
+	possible outliers.
+
+	To define the view, we are using "Hard-cap" method, which is basically setting a range on the column
+	"given order value to calculated order value ratio" from 0.5 to 1.25. This portion of dat have original 
+	and common values.
+*/
+
+with cte as (
+	select
+		o.order_id,
+		sum(oi.quantity) as total_quantities_sold,
+		(sum(oi.quantity) * sum(oi.unit_price)) as calc_order_value,
+		sum(o.order_total) as given_order_value,
+
+		-- creating the ratio : given_order_value / calc_order_value.
+		/*
+			How this ratio calculation is working?
+				- If the ratio is below 1 in decimal values (<1.00), then it indicates a discounted order.
+				- If the ratio is above 1 in decimal values (>1.00), then it indicates a charged or over-charged order.
+		*/
+		
+		round((sum(o.order_total) / (sum(oi.quantity) * sum(oi.unit_price)))::decimal, 2) as calc_to_given_order_value_ratio
+	from blinkit_orders as o
+	join blinkit_order_items as oi on oi.order_id = o.order_id
+	join blinkit_products as p on p.product_id = oi.product_id
+	group by o.order_id
+)
+
+/* 
+main query to filter out orders which are above ratio of 1.5 and below ratio of 0.25, as we have set this orders 
+as "outlier".
+*/
+
+select * from cte
+where not(calc_to_given_order_value_ratio <= 0.5) and not(calc_to_given_order_value_ratio >= 1.25)
