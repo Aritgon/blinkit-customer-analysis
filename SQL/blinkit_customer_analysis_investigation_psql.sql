@@ -214,6 +214,11 @@ update blinkit_customer_feedback
 set sentiment = lower(sentiment);
 
 
+-- dropping store_id column from blinkit_orders;
+alter table blinkit_orders
+drop column store_id;
+
+
 -- ******* Data injection and data validation phase ends here ******* --
 
 

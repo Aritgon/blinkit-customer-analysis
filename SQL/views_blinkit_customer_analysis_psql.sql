@@ -302,8 +302,12 @@ select
 	dense_rank() over (partition by order_month order by mthly_total_order_count_contribution_pct desc) as monthly_order_count_cont_rank
 from main_cte;
 
-select * from vw_monthly_product_analysis 
-where monthly_order_value_cont_rank = 1 and monthly_order_count_cont_rank = 1;
+-- ============================================================
+select
+	*
+from vw_monthly_product_analysis;
+
+
 
 -- ============================================================
 -- 5. View : marginal difference analysis.

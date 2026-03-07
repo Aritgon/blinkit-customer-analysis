@@ -584,3 +584,25 @@ as "outlier".
 
 select * from cte
 where not(calc_to_given_order_value_ratio <= 0.5) and not(calc_to_given_order_value_ratio >= 1.25)
+
+-- understanding IQR outlier.
+with cte as (
+	select
+		percentile_cont(0.25) within group (order by order_total) as q1,
+		percentile_cont(0.75) within group (order by order_total) as q3
+	from blinkit_orders
+),
+
+bound as (
+	select
+		q1, q3,
+		(q3 - q1) as iqr,
+		q1 - 1.5 * (q3-q1) as lower_bound,
+		q3 + 1.5 * (q3-q1) as upper_bound
+	from cte
+)
+
+select
+	*
+from blinkit_orders as o, bound as b
+where o.order_total > b.lower_bound and o.order_total < b.upper_bound;
