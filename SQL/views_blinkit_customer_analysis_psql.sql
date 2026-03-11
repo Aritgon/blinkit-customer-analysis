@@ -335,7 +335,7 @@ left join blinkit_order_items as oi on oi.order_id = o.order_id
 left join blinkit_products as p on p.product_id = oi.product_id
 group by p.margin_percentage, p.category, p.product_name;
 
--- select * from vw_marginal_diff;
+select * from vw_marginal_diff;
 
 select 
 	margin_percentage,
